@@ -1,0 +1,187 @@
+//@version=6
+indicator("🏦 기관급 BTC/ETH 신호 시스템", overlay=true, max_labels_count=500)
+
+// ════════════════════════════════════════════════
+// ⚙️  설정
+// ════════════════════════════════════════════════
+grp1 = "⚙️ 기본 설정"
+vol_len  = input.int(20,   "거래량 MA 기간",    minval=5,  group=grp1)
+fib_len  = input.int(100,  "피보나치 기간",      minval=20, group=grp1)
+adx_thr  = input.float(25.0,"ADX 추세 기준",     minval=10, group=grp1)
+asset    = input.string("BTC", "자산 선택", options=["BTC","ETH"], group=grp1)
+
+grp2 = "🎨 표시 설정"
+show_ema  = input.bool(true, "EMA 라인",     group=grp2)
+show_vwap = input.bool(true, "VWAP 밴드",   group=grp2)
+show_bb   = input.bool(true, "볼린저 밴드", group=grp2)
+show_fib  = input.bool(true, "피보나치",    group=grp2)
+show_tpsl = input.bool(true, "TP/SL 라인", group=grp2)
+
+// ════════════════════════════════════════════════
+// 📐 핵심 지표 계산
+// ════════════════════════════════════════════════
+
+// ── ATR / 거래량 ─────────────────────────────────
+atr       = ta.atr(14)
+vol_ma    = ta.sma(volume, vol_len)
+vol_ratio = volume / vol_ma
+// 기관 기준: MA 2배 이상 + 직전봉 초과
+vol_spike = vol_ratio > 2.0 and volume > volume[1]
+
+body       = math.abs(close - open)
+upper_wick = high - math.max(close, open)
+lower_wick = math.min(close, open) - low
+
+// ── EMA (추세 방향) ───────────────────────────────
+e9   = ta.ema(close, 9)
+e21  = ta.ema(close, 21)
+e55  = ta.ema(close, 55)
+e200 = ta.ema(close, 200)
+
+ema_bull = e9 > e21 and e21 > e55 and close > e200
+ema_bear = e9 < e21 and e21 < e55 and close < e200
+sideways = math.abs(e9 - e21) < atr * 0.12
+
+// ── ADX (추세 강도 - 기관은 25 이상만 진입) ──────
+upMove   = high   - high[1]
+downMove = low[1] - low
+plusDM   = upMove  > downMove and upMove  > 0 ? upMove   : 0.0
+minusDM  = downMove > upMove  and downMove > 0 ? downMove : 0.0
+trur     = ta.rma(ta.tr, 14)
+plusDI   = 100.0 * ta.rma(plusDM,  14) / trur
+minusDI  = 100.0 * ta.rma(minusDM, 14) / trur
+dx_denom = plusDI + minusDI
+dx       = dx_denom > 0 ? 100.0 * math.abs(plusDI - minusDI) / dx_denom : 0.0
+adx      = ta.rma(dx, 14)
+strong_trend = adx > adx_thr
+
+// ── RSI ──────────────────────────────────────────
+rsi = ta.rsi(close, 14)
+
+// ── MACD (저점/고점에서만 유효) ──────────────────
+[macd_line, sig_line, macd_hist] = ta.macd(close, 12, 26, 9)
+macd_bull = ta.crossover(macd_line,  sig_line) and macd_line < 0 and macd_hist > macd_hist[1]
+macd_bear = ta.crossunder(macd_line, sig_line) and macd_line > 0 and macd_hist < macd_hist[1]
+macd_up   = macd_line > sig_line
+
+// ── 스토캐스틱 (20/80 기관 기준) ─────────────────
+stoch_k    = ta.stoch(close, high, low, 14)
+stoch_d    = ta.sma(stoch_k, 3)
+stoch_buy  = stoch_k < 20 and ta.crossover(stoch_k,  stoch_d)
+stoch_sell = stoch_k > 80 and ta.crossunder(stoch_k, stoch_d)
+
+// ── VWAP + 표준편차 밴드 (기관 핵심 지표) ────────
+vwap      = ta.vwap(hlc3)
+vwap_src  = hlc3
+vwap_std  = ta.stdev(vwap_src, 20)
+vwap_up1  = vwap + vwap_std * 1.0
+vwap_up2  = vwap + vwap_std * 2.0
+vwap_dn1  = vwap - vwap_std * 1.0
+vwap_dn2  = vwap - vwap_std * 2.0
+
+vwap_buy  = close < vwap_dn2 and close > open
+vwap_sell = close > vwap_up2 and close < open
+above_vwap = close > vwap
+
+// ── OBV (스마트머니 추적) ─────────────────────────
+obv     = ta.obv
+obv_ma  = ta.sma(obv, 20)
+obv_up  = obv > obv_ma and obv > obv[1]
+obv_dn  = obv < obv_ma and obv < obv[1]
+
+obv_bull_div = close < close[5] and obv > obv[5] and vol_spike
+obv_bear_div = close > close[5] and obv < obv[5] and vol_spike
+
+// ── 볼린저 밴드 ──────────────────────────────────
+[bb_mid, bb_upper, bb_lower] = ta.bb(close, 20, 2.0)
+bb_width   = bb_upper - bb_lower > 0 ? (bb_upper - bb_lower) / bb_mid : 0.0
+bb_squeeze = bb_width < bb_width[10] * 0.75
+bb_buy     = close < bb_lower and close > open
+bb_sell    = close > bb_upper and close < open
+
+// ── CVD ──────────────────────────────────────────
+bull_vol = close > open ? volume : 0.0
+bear_vol = close < open ? volume : 0.0
+cvd      = ta.sma(bull_vol - bear_vol, 14)
+cvd_bull = cvd > 0 and cvd > cvd[1] and cvd[1] > cvd[2]
+cvd_bear = cvd < 0 and cvd < cvd[1] and cvd[1] < cvd[2]
+
+// ── 피보나치 자동 계산 ───────────────────────────
+fib_high  = ta.highest(high, fib_len)
+fib_low   = ta.lowest(low,   fib_len)
+fib_range = fib_high - fib_low
+fib_236   = fib_high - fib_range * 0.236
+fib_382   = fib_high - fib_range * 0.382
+fib_500   = fib_high - fib_range * 0.500
+fib_618   = fib_high - fib_range * 0.618
+fib_786   = fib_high - fib_range * 0.786
+fib_tol   = atr * 0.6
+fib_support = math.abs(close - fib_618) < fib_tol or math.abs(close - fib_786) < fib_tol
+fib_resist  = math.abs(close - fib_382) < fib_tol or math.abs(close - fib_500) < fib_tol
+
+// ── 고래 / 기관 캔들 패턴 ───────────────────────
+whale_accum = vol_spike and lower_wick > body * 1.8 and lower_wick > upper_wick * 2.0 and close > open and close > e21 and rsi < 45
+whale_distrib = vol_spike and upper_wick > body * 1.8 and upper_wick > lower_wick * 2.0 and close < open and close < e21 and rsi > 55
+flush = vol_spike and lower_wick > body * 2.5 and close > open
+
+swing_low20  = ta.lowest(low,   20)
+swing_high20 = ta.highest(high, 20)
+stop_hunt_dn = low  < swing_low20[1]  and close > swing_low20[1]  and vol_spike
+stop_hunt_up = high > swing_high20[1] and close < swing_high20[1] and vol_spike
+
+bear_reversal = close[1] < open[1] and close[2] < open[2] and close[3] < open[3] and close > open
+bull_reversal = close[1] > open[1] and close[2] > open[2] and close[3] > open[3] and close < open
+
+// ════════════════════════════════════════════════
+// 🎯 기관급 점수 계산 (최대 22점)
+// ════════════════════════════════════════════════
+
+b_s1  = whale_accum    ? 3 : 0
+b_s2  = obv_bull_div   ? 3 : 0
+b_s3  = macd_bull      ? 3 : 0
+b_s4  = flush          ? 2 : 0
+b_s5  = stop_hunt_dn   ? 2 : 0
+b_s6  = vwap_buy       ? 2 : 0
+b_s7  = obv_up         ? 2 : 0
+b_s8  = fib_support    ? 2 : 0
+b_s9  = stoch_buy      ? 2 : 0
+b_s10 = cvd_bull       ? 2 : 0
+b_s11 = ema_bull       ? 2 : 0
+b_s12 = rsi < 30       ? 2 : (rsi < 40 ? 1 : 0)
+b_s13 = bb_buy         ? 1 : 0
+b_s14 = bear_reversal  ? 1 : 0
+b_s15 = bb_squeeze     ? 1 : 0
+
+buy_raw = b_s1+b_s2+b_s3+b_s4+b_s5+b_s6+b_s7+b_s8+b_s9+b_s10+b_s11+b_s12+b_s13+b_s14+b_s15
+
+s_s1  = whale_distrib  ? 3 : 0
+s_s2  = obv_bear_div   ? 3 : 0
+s_s3  = macd_bear      ? 3 : 0
+s_s4  = stop_hunt_up   ? 2 : 0
+s_s5  = vwap_sell      ? 2 : 0
+s_s6  = obv_dn         ? 2 : 0
+s_s7  = fib_resist     ? 2 : 0
+s_s8  = stoch_sell     ? 2 : 0
+s_s9  = cvd_bear       ? 2 : 0
+s_s10 = ema_bear       ? 2 : 0
+s_s11 = rsi > 70       ? 2 : (rsi > 60 ? 1 : 0)
+s_s12 = bb_sell        ? 1 : 0
+s_s13 = bull_reversal  ? 1 : 0
+s_s14 = bb_squeeze     ? 1 : 0
+
+sell_raw = s_s1+s_s2+s_s3+s_s4+s_s5+s_s6+s_s7+s_s8+s_s9+s_s10+s_s11+s_s12+s_s13+s_s14
+
+buy_score  = sideways ? 0 : strong_trend ? buy_raw  : math.round(buy_raw  * 0.6)
+sell_score = sideways ? 0 : strong_trend ? sell_raw : math.round(sell_raw * 0.6)
+
+strong_buy  = buy_score  >= 7
+normal_buy  = buy_score  >= 5 and buy_score  < 7
+strong_sell = sell_score >= 7
+normal_sell = sell_score >= 5 and sell_score < 7
+
+tp_buy  = strong_buy  ? close * 1.025 : close * 1.020
+sl_buy  = strong_buy  ? close * 0.988 : close * 0.991
+tp_sell = strong_sell ? close * 0.975 : close * 0.980
+sl_sell = strong_sell ? close * 1.012 : close * 1.009
+
+// (표시/라벨/대시보드/알림 로직은 원본과 동일 — 백엔드(backend/indicators.py, backend/scoring.py)로 이식됨)
