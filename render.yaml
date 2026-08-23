@@ -22,9 +22,15 @@ services:
       - key: PYTHON_VERSION
         value: "3.11.9"
 
-      # 접근 보호 (권장) — 설정하면 브라우저 로그인창으로 사이트 전체가 보호된다.
-      # 배포된 주소는 링크를 아는 누구나 접속할 수 있으므로 반드시 설정하기를 권한다.
-      # sync: false 이므로 Render 대시보드에서 직접 값을 입력하게 되며, git에는 저장되지 않는다.
+      # 계정·개인 기록 저장용 DB (권장) — Neon·Supabase 등 무료 Postgres의
+      # 연결 주소(postgres://...)를 넣는다. 미설정 시 SQLite로 동작하는데,
+      # 무료 플랜은 디스크가 임시라 재배포·재시작 때 계정과 기록이 사라진다.
+      # sync: false 이므로 Render 대시보드에서 직접 값을 입력하며, git에는 저장되지 않는다.
+      - key: DATABASE_URL
+        sync: false
+
+      # 사이트 전체 잠금 (선택) — 회원가입과 별개로 사이트 자체를 숨기고 싶을 때만.
+      # 설정하면 브라우저 기본 로그인창이 한 겹 더 생긴다.
       - key: APP_USER
         sync: false
       - key: APP_PASSWORD

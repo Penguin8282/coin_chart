@@ -27,7 +27,9 @@ from .patterns.custom_engine import (
 from .indicators import atr as atr_fn
 from .screener import resolve_targets, run_screen, MAX_TARGETS
 from .backtest import run_backtest
-from .models import RulePatternCreate, ShapePatternCreate, WatchlistItem
+from .models import (RulePatternCreate, ShapePatternCreate, WatchlistItem,
+                     RegisterBody, LoginBody, TradeCreate)
+from . import auth
 
 app = FastAPI(title="개인 차트 분석 시스템")
 
@@ -122,7 +124,7 @@ def _ohlcv_arrays(candle_rows: list[dict]):
 
 
 @app.get("/api/analysis")
-def analysis(market: str, symbol: str, interval: str = "1d", limit: int = 500,
+def analysis(request: Request, market: str, symbol: str, interval: str = "1d", limit: int = 500,
              vol_len: int = 20, fib_len: int = 100, adx_thr: float = 25.0,
              exchange: str | None = None):
     if market not in ("crypto", "us", "kr"):
@@ -146,7 +148,8 @@ def analysis(market: str, symbol: str, interval: str = "1d", limit: int = 500,
     fbb = compute_fibonacci_bb(hlc3, v, length=min(200, len(c)), mult=3.0)
 
     custom_matches = []
-    for pat in db.list_custom_patterns():
+    user = current_user(request)
+    for pat in (db.list_custom_patterns(user["id"]) if user else []):
         try:
             if pat["type"] == "rule":
                 idxs = scan_rule_pattern(o, h, l, c, v, pat["definition"])
@@ -191,7 +194,7 @@ def diag(market: str = "crypto", symbol: str = "BTCUSDT", interval: str = "1h"):
 
 
 @app.get("/api/screener")
-def screener(scope: str = "watchlist", interval: str = "1h", limit: int = 300,
+def screener(request: Request, scope: str = "watchlist", interval: str = "1h", limit: int = 300,
              exchange: str | None = None, min_score: int = 0, direction: str = "any",
              vol_len: int = 20, fib_len: int = 100, adx_thr: float = 25.0):
     """여러 종목을 한 번에 훑어 신호 점수순으로 돌려준다."""
@@ -200,7 +203,9 @@ def screener(scope: str = "watchlist", interval: str = "1h", limit: int = 300,
     if direction not in ("any", "buy", "sell"):
         raise HTTPException(400, "direction은 any|buy|sell 중 하나여야 합니다")
 
-    targets = resolve_targets(scope, db.list_watchlist())
+    user = current_user(request)
+    my_watch = db.list_watchlist(user["id"]) if user else []
+    targets = resolve_targets(scope, my_watch)
     result = run_screen(
         targets, interval=interval, limit=max(120, min(limit, 600)), exchange=exchange,
         params={"vol_len": vol_len, "fib_len": fib_len, "adx_thr": adx_thr},
@@ -242,24 +247,99 @@ def backtest(market: str, symbol: str, interval: str = "1h", limit: int = 600,
     return _clean(result)
 
 
+# ── 계정 ──────────────────────────────────────────────────────────────────
+import re as _re
+
+_USERNAME_RE = _re.compile(r"^[a-z0-9_.-]{2,20}$")
+
+
+def current_user(request: Request) -> dict | None:
+    """세션 쿠키로 로그인한 사용자를 찾는다. 없으면 None."""
+    return auth.resolve_session(request.cookies.get(auth.SESSION_COOKIE))
+
+
+def require_user(request: Request) -> dict:
+    user = current_user(request)
+    if not user:
+        raise HTTPException(401, "로그인이 필요합니다")
+    return user
+
+
+def _set_session_cookie(response: Response, token: str):
+    response.set_cookie(
+        auth.SESSION_COOKIE, token,
+        max_age=auth.SESSION_TTL, httponly=True, samesite="lax",
+        secure=auth.secure_cookies(), path="/",
+    )
+
+
+@app.post("/api/auth/register")
+def register(body: RegisterBody, response: Response):
+    username = body.username.strip().lower()
+    if not _USERNAME_RE.match(username):
+        raise HTTPException(400, "아이디는 영문 소문자·숫자·-_. 으로 2~20자여야 합니다")
+    if len(body.password) < 8:
+        raise HTTPException(400, "비밀번호는 8자 이상이어야 합니다")
+    if len(body.password) > 200:
+        raise HTTPException(400, "비밀번호가 너무 깁니다")
+    uid = db.create_user(username, auth.hash_password(body.password))
+    if uid is None:
+        raise HTTPException(409, "이미 사용 중인 아이디입니다")
+    _set_session_cookie(response, auth.issue_session(uid))
+    return {"id": uid, "username": username}
+
+
+@app.post("/api/auth/login")
+def login(body: LoginBody, response: Response):
+    username = body.username.strip().lower()
+    wait = auth.login_blocked(username)
+    if wait:
+        raise HTTPException(429, f"로그인 시도가 너무 많습니다. {wait}초 후에 다시 해보세요")
+    user = db.get_user_by_name(username)
+    # 아이디가 없어도 비밀번호가 틀려도 같은 문구를 준다 — 어느 아이디가
+    # 존재하는지 답에서 새어 나가면 안 된다.
+    if not user or not auth.verify_password(body.password, user["password_hash"]):
+        auth.record_login_failure(username)
+        raise HTTPException(401, "아이디 또는 비밀번호가 맞지 않습니다")
+    auth.clear_login_failures(username)
+    _set_session_cookie(response, auth.issue_session(user["id"]))
+    return {"id": user["id"], "username": user["username"]}
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, response: Response):
+    auth.revoke_session(request.cookies.get(auth.SESSION_COOKIE))
+    response.delete_cookie(auth.SESSION_COOKIE, path="/")
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def me(request: Request):
+    user = current_user(request)
+    return {"user": user}
+
+
 # ── 사용자 정의 패턴 ──────────────────────────────────────────────────────
 @app.get("/api/patterns/custom")
-def list_custom_patterns():
-    return _clean(db.list_custom_patterns())
+def list_custom_patterns(request: Request):
+    user = current_user(request)
+    return _clean(db.list_custom_patterns(user["id"]) if user else [])
 
 
 @app.post("/api/patterns/custom/rule")
-def create_rule_pattern(body: RulePatternCreate):
+def create_rule_pattern(body: RulePatternCreate, request: Request):
+    user = require_user(request)
     definition = {"candles": [c.model_dump() for c in body.candles]}
     errors = validate_rule_definition(definition)
     if errors:
         raise HTTPException(400, "; ".join(errors))
-    pid = db.create_custom_pattern(body.name, "rule", body.direction, definition)
+    pid = db.create_custom_pattern(user["id"], body.name, "rule", body.direction, definition)
     return {"id": pid}
 
 
 @app.post("/api/patterns/custom/shape")
-def create_shape_pattern(body: ShapePatternCreate):
+def create_shape_pattern(body: ShapePatternCreate, request: Request):
+    user = require_user(request)
     if body.market not in ("crypto", "us", "kr"):
         raise HTTPException(400, "market은 crypto|us|kr 중 하나여야 합니다")
     fetched = get_candles(body.market, body.symbol, body.interval, body.limit)
@@ -271,13 +351,14 @@ def create_shape_pattern(body: ShapePatternCreate):
         definition = make_shape_template(close, body.start_idx, body.end_idx)
     except ValueError as e:
         raise HTTPException(400, str(e))
-    pid = db.create_custom_pattern(body.name, "shape", body.direction, definition)
+    pid = db.create_custom_pattern(user["id"], body.name, "shape", body.direction, definition)
     return {"id": pid}
 
 
 @app.delete("/api/patterns/custom/{pattern_id}")
-def delete_custom_pattern(pattern_id: int):
-    ok = db.delete_custom_pattern(pattern_id)
+def delete_custom_pattern(pattern_id: int, request: Request):
+    user = require_user(request)
+    ok = db.delete_custom_pattern(user["id"], pattern_id)
     if not ok:
         raise HTTPException(404, "패턴을 찾을 수 없습니다")
     return {"deleted": True}
@@ -285,20 +366,88 @@ def delete_custom_pattern(pattern_id: int):
 
 # ── 관심종목 ──────────────────────────────────────────────────────────────
 @app.get("/api/watchlist")
-def get_watchlist():
-    return _clean(db.list_watchlist())
+def get_watchlist(request: Request):
+    user = current_user(request)
+    return _clean(db.list_watchlist(user["id"]) if user else [])
 
 
 @app.post("/api/watchlist")
-def post_watchlist(item: WatchlistItem):
-    db.add_watchlist(item.market, item.symbol)
+def post_watchlist(item: WatchlistItem, request: Request):
+    user = require_user(request)
+    db.add_watchlist(user["id"], item.market, item.symbol)
     return {"ok": True}
 
 
 @app.delete("/api/watchlist")
-def delete_watchlist(market: str, symbol: str):
-    db.remove_watchlist(market, symbol)
+def delete_watchlist(market: str, symbol: str, request: Request):
+    user = require_user(request)
+    db.remove_watchlist(user["id"], market, symbol)
     return {"ok": True}
+
+
+# ── 매매 기록 (포트폴리오) ────────────────────────────────────────────────
+# 화면은 아직 없지만 저장소와 API를 먼저 갖춰 둔다. 증권사·거래소 잔고를
+# 자동으로 읽어올 권한은 개인에게 열려 있지 않으므로 직접 입력이 기본이다.
+
+@app.get("/api/portfolio")
+def get_portfolio(request: Request):
+    user = require_user(request)
+    trades = db.list_trades(user["id"])
+    return _clean({"trades": trades, "positions": _positions(trades)})
+
+
+@app.post("/api/portfolio/trades")
+def post_trade(body: TradeCreate, request: Request):
+    user = require_user(request)
+    if body.market not in ("crypto", "us", "kr"):
+        raise HTTPException(400, "market은 crypto|us|kr 중 하나여야 합니다")
+    if body.side not in ("buy", "sell"):
+        raise HTTPException(400, "side는 buy|sell 중 하나여야 합니다")
+    if not (body.qty > 0 and math.isfinite(body.qty)):
+        raise HTTPException(400, "수량은 0보다 커야 합니다")
+    if not (body.price > 0 and math.isfinite(body.price)):
+        raise HTTPException(400, "가격은 0보다 커야 합니다")
+    tid = db.add_trade(user["id"], body.market, body.symbol.strip(),
+                       body.side, body.qty, body.price, body.note.strip()[:200])
+    return {"id": tid}
+
+
+@app.delete("/api/portfolio/trades/{trade_id}")
+def delete_trade(trade_id: int, request: Request):
+    user = require_user(request)
+    if not db.delete_trade(user["id"], trade_id):
+        raise HTTPException(404, "기록을 찾을 수 없습니다")
+    return {"deleted": True}
+
+
+def _positions(trades: list[dict]) -> list[dict]:
+    """매매 기록을 보유 현황으로 접는다.
+    평균단가는 매수의 가중평균. 매도는 수량만 줄이고 평균단가는 유지한다
+    (실현손익 계산은 단순화를 위해 아직 하지 않는다 — 화면에 그렇게 적을 것)."""
+    pos: dict[tuple, dict] = {}
+    for t in trades:
+        key = (t["market"], t["symbol"])
+        p = pos.setdefault(key, {"market": t["market"], "symbol": t["symbol"],
+                                 "qty": 0.0, "cost": 0.0})
+        if t["side"] == "buy":
+            p["qty"] += t["qty"]
+            p["cost"] += t["qty"] * t["price"]
+        else:
+            if p["qty"] > 0:
+                # 평균단가 기준으로 원가를 줄인다
+                avg = p["cost"] / p["qty"]
+                sell_qty = min(t["qty"], p["qty"])
+                p["qty"] -= sell_qty
+                p["cost"] -= sell_qty * avg
+            # 보유량보다 많이 파는 기록은 잘못 입력한 것 — 0에서 멈춘다
+    out = []
+    for p in pos.values():
+        if p["qty"] <= 1e-12:
+            continue
+        out.append({"market": p["market"], "symbol": p["symbol"],
+                    "qty": round(p["qty"], 8),
+                    "avg_price": round(p["cost"] / p["qty"], 8)})
+    return out
 
 
 # ── 프론트엔드 정적 파일 서빙 ─────────────────────────────────────────────

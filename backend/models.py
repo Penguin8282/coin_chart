@@ -36,3 +36,22 @@ class ShapePatternCreate(BaseModel):
 class WatchlistItem(BaseModel):
     market: str
     symbol: str
+
+
+class RegisterBody(BaseModel):
+    username: str
+    password: str
+
+
+class LoginBody(BaseModel):
+    username: str
+    password: str
+
+
+class TradeCreate(BaseModel):
+    market: str
+    symbol: str
+    side: str          # 'buy' | 'sell'
+    qty: float
+    price: float
+    note: str = ""

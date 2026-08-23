@@ -114,6 +114,12 @@ async function api(path, opts) {
   const res = await fetch(API + path, opts);
   if (!res.ok) {
     const b = await res.json().catch(() => ({}));
+    // 로그인이 필요한 동작이었다면 "실패했습니다"만 던지지 말고 로그인 창을 연다
+    if (res.status === 401 && !path.startsWith("/auth/")) {
+      state.user = null;
+      renderAccount();
+      openAuth("login");
+    }
     throw new Error(b.detail || `요청에 실패했습니다 (${res.status})`);
   }
   return res.json();
@@ -260,6 +266,88 @@ async function loadCustomPatterns() {
   state.customPatterns = await api("/patterns/custom");
   renderCustomPatternMgmt();
 }
+/* ══════════════════ 계정 ══════════════════
+   관심종목·나만의 패턴·매매 기록은 계정에 묶여 서버 DB에 저장된다.
+   로그인하지 않아도 차트 분석은 전부 쓸 수 있고, "내 것을 저장하는"
+   기능들만 로그인을 요구한다. */
+
+state.user = null;
+
+async function loadMe() {
+  try {
+    const r = await api("/auth/me");
+    state.user = r.user;
+  } catch { state.user = null; }
+  renderAccount();
+}
+
+function renderAccount() {
+  const btn = $("accountBtn");
+  btn.classList.toggle("logged-in", !!state.user);
+  $("accountLabel").textContent = state.user ? state.user.username : "로그인";
+  btn.title = state.user ? `${state.user.username} — 누르면 로그아웃` : "로그인";
+}
+
+let authMode = "login";
+
+function openAuth(mode) {
+  authMode = mode || "login";
+  document.querySelectorAll("#authTabs .tab").forEach(t =>
+    t.classList.toggle("active", t.dataset.auth === authMode));
+  $("authTitle").textContent = authMode === "login" ? "로그인" : "회원가입";
+  $("authSubmit").textContent = authMode === "login" ? "로그인" : "가입하고 시작하기";
+  $("authPass").autocomplete = authMode === "login" ? "current-password" : "new-password";
+  $("authError").textContent = "";
+  $("authModal").classList.remove("hidden");
+  $("authUser").focus();
+}
+function closeAuth() { $("authModal").classList.add("hidden"); }
+
+$("accountBtn").addEventListener("click", async () => {
+  if (!state.user) { openAuth("login"); return; }
+  // 로그인 상태에서 누르면 로그아웃 — 실수 방지로 한 번 묻는다
+  if (confirm(`${state.user.username} 계정에서 로그아웃할까요?`)) {
+    await api("/auth/logout", { method: "POST" });
+    state.user = null;
+    renderAccount();
+    await Promise.all([loadWatchlist(), loadCustomPatterns()]);
+    if (state.data) loadAnalysis();       // 내 패턴 표시를 지운 결과로 다시
+    toast("로그아웃했습니다.");
+  }
+});
+$("closeAuthBtn").addEventListener("click", closeAuth);
+$("authModal").addEventListener("click", (e) => { if (e.target === $("authModal")) closeAuth(); });
+document.querySelectorAll("#authTabs .tab").forEach(t =>
+  t.addEventListener("click", () => openAuth(t.dataset.auth)));
+
+$("authForm").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const err = $("authError");
+  err.textContent = "";
+  const username = $("authUser").value.trim();
+  const password = $("authPass").value;
+  if (!username || !password) { err.textContent = "아이디와 비밀번호를 입력하세요."; return; }
+  const btn = $("authSubmit");
+  btn.disabled = true;
+  try {
+    const user = await api(`/auth/${authMode === "login" ? "login" : "register"}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+    state.user = user;
+    renderAccount();
+    closeAuth();
+    $("authPass").value = "";
+    await Promise.all([loadWatchlist(), loadCustomPatterns()]);
+    if (state.data) loadAnalysis();       // 내 패턴을 반영해 다시 분석
+    toast(authMode === "login" ? `${user.username}님, 다시 오셨네요.` : "가입 완료! 이제 담는 것들이 계정에 저장됩니다.");
+  } catch (e2) {
+    err.textContent = e2.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
 async function loadWatchlist() {
   state.watchlist = await api("/watchlist");
   renderWatchlist();
@@ -1021,11 +1109,19 @@ function renderWatchlist() {
   $("watchCount").textContent = state.watchlist.length;
   if (!state.watchlist.length) {
     // 사이드바 첫 칸이라 빈 상태가 눈에 띈다 — 뭘 하면 되는지까지 알려준다
-    $("watchlistList").innerHTML = `<div class="watch-empty">
-      <p>자주 보는 종목을 담아두면<br>여기에서 바로 열 수 있습니다.</p>
-      <button class="mini-btn" id="watchEmptyAdd">＋ 종목 찾기</button>
-    </div>`;
-    $("watchEmptyAdd").addEventListener("click", () => openPicker());
+    if (!state.user) {
+      $("watchlistList").innerHTML = `<div class="login-nudge">
+        <p>로그인하면 관심종목·나만의 패턴·매매 기록이<br>계정에 저장되어 어디서든 이어집니다.</p>
+        <button class="mini-btn" id="watchLoginBtn">로그인 · 가입</button>
+      </div>`;
+      $("watchLoginBtn").addEventListener("click", () => openAuth("login"));
+    } else {
+      $("watchlistList").innerHTML = `<div class="watch-empty">
+        <p>자주 보는 종목을 담아두면<br>여기에서 바로 열 수 있습니다.</p>
+        <button class="mini-btn" id="watchEmptyAdd">＋ 종목 찾기</button>
+      </div>`;
+      $("watchEmptyAdd").addEventListener("click", () => openPicker());
+    }
     $("watchlistList").closest(".side-block")?.classList.remove("has-more");
     return;
   }
@@ -1376,6 +1472,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (e.key === "Escape") {
+    if (!$("authModal").classList.contains("hidden")) { closeAuth(); return; }
     if (!$("pickerModal").classList.contains("hidden")) { closePicker(); return; }
     if (!$("builderModal").classList.contains("hidden")) { closeBuilder(); return; }
     if (!$("shortcutHelp").classList.contains("hidden")) { $("shortcutHelp").classList.add("hidden"); return; }
@@ -2016,6 +2113,7 @@ $("paramResetBtn").addEventListener("click", async () => {
   addCandleRule(0);
   updateLayerSummary();
   try {
+    await loadMe();
     await loadMarkets();
     await loadCustomPatterns();
     await loadWatchlist();
