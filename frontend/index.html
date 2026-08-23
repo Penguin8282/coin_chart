@@ -26,6 +26,14 @@
       <div class="brand-text"><span>SMART</span><strong>SIGNAL</strong></div>
     </div>
 
+    <div class="side-block watch-block">
+      <div class="side-head">
+        <span>관심 종목 <b id="watchCount">0</b>개</span>
+        <button id="openPickerBtn" class="mini-btn" title="코인·국내주식·해외주식을 검색해 추가">＋ 종목 추가</button>
+      </div>
+      <div id="watchlistList"></div>
+    </div>
+
     <nav id="nav">
       <p class="nav-group">분석</p>
       <button class="nav-item active" data-view="overview">
@@ -52,20 +60,11 @@
       </button>
     </nav>
 
-    <div class="side-block">
-      <div class="side-head">
-        <span>관심 종목 <b id="watchCount">0</b>개</span>
-        <button id="openPickerBtn" class="mini-btn" title="코인·국내주식·해외주식을 검색해 추가">＋ 종목 추가</button>
-      </div>
-      <div id="watchlistList"></div>
-    </div>
-
-    <div class="side-block">
-      <div class="side-head"><span>현재 표시 <b id="layerCount">0/6</b></span></div>
-      <button class="layer-jump" data-view="settings">
+    <div class="side-foot">
+      <button class="layer-jump" data-view="settings" title="표시 설정에서 수정">
         <div>
           <strong id="layerSummary">레이어 설정</strong>
-          <span>표시 설정에서 바로 수정</span>
+          <span>현재 표시 <b id="layerCount">0/6</b></span>
         </div>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
       </button>

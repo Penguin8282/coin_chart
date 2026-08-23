@@ -170,14 +170,20 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .fineprint, .fine { color: var(--ink-3); font-size: 11px; line-height: 1.6; }
 
 /* ══════════════ 셸 ══════════════ */
-#shell { display: grid; grid-template-columns: 264px 1fr; height: 100vh; }
+/* grid-template-rows 를 안 주면 암묵적 행이 auto 라서, 사이드바 내용이 길어질 때
+   행 자체가 100vh 를 넘어 자란다. 그러면 overflow-y:auto 가 걸릴 곳이 없어져
+   맨 아래 항목이 화면 밖으로 밀려난다. minmax(0,1fr) 로 행을 화면에 묶어둔다. */
+#shell {
+  display: grid; grid-template-columns: 264px 1fr; grid-template-rows: minmax(0, 1fr);
+  height: 100vh; overflow: hidden;
+}
 
 #sidebar {
   background: var(--surface-1);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 22px;
   padding: 22px 18px;
-  overflow-y: auto;
+  overflow-y: auto; min-height: 0;
 }
 
 .brand { display: flex; align-items: center; gap: 11px; padding: 0 4px; }
@@ -274,7 +280,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .disclaimer svg { width: 15px; height: 15px; flex: 0 0 auto; margin-top: 1px; }
 
 /* ══════════════ 메인 ══════════════ */
-#main { display: flex; flex-direction: column; min-width: 0; }
+#main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 #topline {
   display: flex; align-items: center; gap: 14px;
@@ -923,3 +929,38 @@ table.data tbody tr:hover .row-act,
   pointer-events: none; border-radius: 0 0 var(--r-md) var(--r-md);
   background: linear-gradient(to bottom, transparent, var(--surface-1));
 }
+
+
+/* ══════════════ 사이드바 우선순위 ══════════════
+   종목을 바꾸는 일이 화면을 옮기는 일보다 훨씬 잦다. 그래서 관심 종목이
+   맨 위에 오고, 화면 메뉴가 그 아래, 잘 안 쓰는 레이어 요약은 맨 밑이다. */
+/* 메뉴·레이어·고지는 길이가 고정이고, 관심 종목만 늘었다 줄었다 한다.
+   그래서 남는 세로 공간은 관심 종목이 가져간다 — 스크롤 막대가 사이드바와
+   목록 두 군데 겹쳐 생기지 않도록. */
+.watch-block {
+  flex: 1 1 auto; min-height: 156px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.watch-block .side-head { font-size: 12px; color: var(--ink-2); flex: 0 0 auto; }
+.watch-block .side-head b { color: var(--accent); }
+.watch-block #watchlistList {
+  flex: 1 1 auto; max-height: none; min-height: 0; overflow-y: auto;
+}
+
+#nav { flex: 0 0 auto; }
+
+/* 레이어 요약은 표시 설정으로 가는 또 하나의 길일 뿐이라 맨 아래에서 조용히 있는다 */
+.side-foot { flex: 0 0 auto; padding-top: 4px; }
+.disclaimer { flex: 0 0 auto; }
+.side-foot .layer-jump { width: 100%; }
+.side-foot .layer-jump span b { color: var(--ink-2); font-family: var(--mono); }
+
+/* 관심종목이 비었을 때 — 여기가 사이드바의 첫 칸이라 빈 상태가 더 눈에 띈다 */
+.watch-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 18px 12px; border-radius: var(--r-md);
+  border: 1px dashed var(--border-2); background: var(--surface-2);
+  text-align: center;
+}
+.watch-empty p { font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
+.watch-empty .mini-btn { white-space: nowrap; }

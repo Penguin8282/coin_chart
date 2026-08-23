@@ -868,7 +868,13 @@ function watchBadge(w) {
 function renderWatchlist() {
   $("watchCount").textContent = state.watchlist.length;
   if (!state.watchlist.length) {
-    $("watchlistList").innerHTML = `<p class="empty-msg">관심종목이 없습니다</p>`;
+    // 사이드바 첫 칸이라 빈 상태가 눈에 띈다 — 뭘 하면 되는지까지 알려준다
+    $("watchlistList").innerHTML = `<div class="watch-empty">
+      <p>자주 보는 종목을 담아두면<br>여기에서 바로 열 수 있습니다.</p>
+      <button class="mini-btn" id="watchEmptyAdd">＋ 종목 찾기</button>
+    </div>`;
+    $("watchEmptyAdd").addEventListener("click", () => openPicker());
+    $("watchlistList").closest(".side-block")?.classList.remove("has-more");
     return;
   }
   $("watchlistList").innerHTML = state.watchlist.map(w => `
