@@ -183,6 +183,120 @@ def fetch_binance(symbol: str, interval: str, limit: int = 500) -> list[Candle]:
     return out
 
 
+# ── 1-2) 코인 거래소 선택 ────────────────────────────────────────────────
+# 같은 코인이라도 거래소마다 가격·표시통화가 다르다. 국내 거래소는 원화(KRW),
+# 해외 거래소는 달러(USDT/USD) 기준이라 김치프리미엄만큼 차이가 난다.
+# 사용자가 어디 시세를 볼지 직접 고를 수 있게 어댑터를 나눠 둔다.
+CRYPTO_EXCHANGES = {
+    "binance":  {"label": "바이낸스",   "currency": "USDT", "region": "해외"},
+    "upbit":    {"label": "업비트",     "currency": "KRW",  "region": "국내"},
+    "bithumb":  {"label": "빗썸",       "currency": "KRW",  "region": "국내"},
+    "coinbase": {"label": "코인베이스", "currency": "USD",  "region": "해외"},
+}
+DEFAULT_CRYPTO_EXCHANGE = "binance"
+
+
+def crypto_base(symbol: str) -> str:
+    """거래 페어 심볼에서 기초자산만 뽑는다. BTCUSDT → BTC, KRW-BTC → BTC."""
+    s = symbol.upper().replace("-", "").replace("_", "")
+    for prefix in ("KRW", "USDT", "USDC", "BUSD", "USD"):
+        if s.startswith(prefix) and len(s) > len(prefix):
+            s = s[len(prefix):]
+            break
+    for quote in ("USDT", "USDC", "BUSD", "KRW", "USD"):
+        if s.endswith(quote) and len(s) > len(quote):
+            return s[: -len(quote)]
+    return s
+
+
+# ── Upbit (국내, KRW) ────────────────────────────────────────────────────
+_UPBIT_MINUTES = {"1m": 1, "5m": 5, "15m": 15, "30m": 30, "1h": 60, "4h": 240}
+
+
+def fetch_upbit(base: str, interval: str, limit: int = 500) -> list[Candle]:
+    market_code = f"KRW-{base}"
+    if interval in _UPBIT_MINUTES:
+        url = f"https://api.upbit.com/v1/candles/minutes/{_UPBIT_MINUTES[interval]}"
+    elif interval == "1d":
+        url = "https://api.upbit.com/v1/candles/days"
+    elif interval == "1w":
+        url = "https://api.upbit.com/v1/candles/weeks"
+    else:
+        raise ValueError(f"업비트가 지원하지 않는 간격입니다: {interval}")
+
+    with httpx.Client(timeout=_HTTP_TIMEOUT, headers={"User-Agent": _UA, "Accept": "application/json"}) as client:
+        r = client.get(url, params={"market": market_code, "count": min(limit, 200)})
+        r.raise_for_status()
+        rows = r.json()
+    if not isinstance(rows, list):
+        raise ValueError("업비트 응답 형식이 예상과 다릅니다")
+
+    out = []
+    for row in rows:
+        out.append(Candle(
+            t=int(row["timestamp"]),
+            o=float(row["opening_price"]), h=float(row["high_price"]),
+            l=float(row["low_price"]), c=float(row["trade_price"]),
+            v=float(row.get("candle_acc_trade_volume", 0.0)),
+        ))
+    out.sort(key=lambda x: x.t)   # 업비트는 최신순으로 주므로 뒤집는다
+    return out
+
+
+# ── Bithumb (국내, KRW) ──────────────────────────────────────────────────
+_BITHUMB_INTERVAL = {"1m": "1m", "5m": "5m", "30m": "30m", "1h": "1h", "1d": "24h"}
+
+
+def fetch_bithumb(base: str, interval: str, limit: int = 500) -> list[Candle]:
+    bi = _BITHUMB_INTERVAL.get(interval)
+    if not bi:
+        raise ValueError(f"빗썸이 지원하지 않는 간격입니다: {interval}")
+    url = f"https://api.bithumb.com/public/candlestick/{base}_KRW/{bi}"
+    with httpx.Client(timeout=_HTTP_TIMEOUT, headers={"User-Agent": _UA, "Accept": "application/json"}) as client:
+        r = client.get(url)
+        r.raise_for_status()
+        data = r.json()
+    if data.get("status") != "0000":
+        raise ValueError(f"빗썸 오류 응답: {data.get('status')}")
+
+    out = []
+    for row in data.get("data", []):
+        # [기준시각(ms), 시가, 종가, 고가, 저가, 거래량] — 종가가 두 번째임에 유의
+        out.append(Candle(
+            t=int(row[0]), o=float(row[1]), h=float(row[3]),
+            l=float(row[4]), c=float(row[2]), v=float(row[5]),
+        ))
+    out.sort(key=lambda x: x.t)
+    return out[-limit:]
+
+
+# ── Coinbase (해외, USD) ─────────────────────────────────────────────────
+_COINBASE_GRAN = {"1m": 60, "5m": 300, "15m": 900, "1h": 3600, "1d": 86400}
+
+
+def fetch_coinbase(base: str, interval: str, limit: int = 500) -> list[Candle]:
+    gran = _COINBASE_GRAN.get(interval)
+    if not gran:
+        raise ValueError(f"코인베이스가 지원하지 않는 간격입니다: {interval}")
+    url = f"https://api.exchange.coinbase.com/products/{base}-USD/candles"
+    with httpx.Client(timeout=_HTTP_TIMEOUT, headers={"User-Agent": _UA, "Accept": "application/json"}) as client:
+        r = client.get(url, params={"granularity": gran})
+        r.raise_for_status()
+        rows = r.json()
+    if not isinstance(rows, list):
+        raise ValueError("코인베이스 응답 형식이 예상과 다릅니다")
+
+    out = []
+    for row in rows:
+        # [시각(초), 저가, 고가, 시가, 종가, 거래량]
+        out.append(Candle(
+            t=int(row[0]) * 1000, o=float(row[3]), h=float(row[2]),
+            l=float(row[1]), c=float(row[4]), v=float(row[5]),
+        ))
+    out.sort(key=lambda x: x.t)
+    return out[-limit:]
+
+
 # ── 2) Yahoo Finance ─────────────────────────────────────────────────────
 _YAHOO_INTERVAL = {
     "1m": "1m", "5m": "5m", "15m": "15m", "30m": "30m",
@@ -344,43 +458,89 @@ def _embed_head_and_shoulders(prices: list[float], start: int, scale: float):
 
 
 # ── 오케스트레이션 ────────────────────────────────────────────────────────
-def get_candles(market: Market, symbol: str, interval: str = "1d", limit: int = 500) -> dict:
+def get_candles(market: Market, symbol: str, interval: str = "1d", limit: int = 500,
+                exchange: str | None = None) -> dict:
     """market/symbol에 맞는 프로바이더 체인을 순서대로 시도하고, 전부 실패하면
-    데모 데이터로 폴백한다. 반환: {"candles": [...], "source": "binance|yahoo|toss|demo"}"""
+    데모 데이터로 폴백한다.
+
+    코인은 exchange로 거래소를 지정할 수 있다. 지정한 거래소가 해당 간격이나
+    종목을 지원하지 않으면 다른 거래소로 넘어가되, 어디서 가져왔는지를 source와
+    note로 정확히 알려준다 — 원화 거래소와 달러 거래소는 가격 자체가 다르므로
+    출처를 숨기면 안 된다.
+
+    반환: {"candles": [...], "source": str, "currency": str, "note": str|None}
+    """
     preset = next((p for p in DEFAULT_SYMBOLS.get(market, []) if p["symbol"] == symbol), None)
 
-    tries = []
-    # 토스증권 공식 Open API (openapi.tossinvest.com) — 한국/미국 주식 모두 커버.
-    # interval이 1m/1d 이고 TOSS_CLIENT_ID/TOSS_CLIENT_SECRET 환경변수가 설정된 경우에만 시도.
-    if market in ("us", "kr") and interval in ("1m", "1d") and toss_openapi.is_configured():
-        toss_sym = symbol.upper() if market == "us" else symbol
-        tries.append(("toss_openapi", lambda: [Candle(**c) for c in toss_openapi.fetch_candles(toss_sym, interval, limit)]))
+    tries: list[tuple[str, object]] = []
+    requested_label = None
 
     if market == "crypto":
-        binance_sym = preset["binance"] if preset else (symbol if symbol.upper().endswith("USDT") else symbol.upper() + "USDT")
-        yahoo_sym = preset["yahoo"] if preset else (symbol.upper().replace("USDT", "") + "-USD")
-        tries += [("binance", lambda: fetch_binance(binance_sym, interval, limit)),
-                  ("yahoo", lambda: fetch_yahoo(yahoo_sym, interval, limit))]
-    elif market == "us":
-        yahoo_sym = preset["yahoo"] if preset else symbol.upper()
+        base = crypto_base(preset["symbol"] if preset else symbol)
+        binance_sym = preset["binance"] if preset else (symbol if symbol.upper().endswith("USDT") else base + "USDT")
+        yahoo_sym = preset["yahoo"] if preset else (base + "-USD")
+
+        builders = {
+            "binance":  lambda: fetch_binance(binance_sym, interval, limit),
+            "upbit":    lambda: fetch_upbit(base, interval, limit),
+            "bithumb":  lambda: fetch_bithumb(base, interval, limit),
+            "coinbase": lambda: fetch_coinbase(base, interval, limit),
+        }
+        chosen = exchange if exchange in builders else DEFAULT_CRYPTO_EXCHANGE
+        requested_label = CRYPTO_EXCHANGES[chosen]["label"]
+
+        # 고른 거래소를 먼저, 나머지는 기본 순서대로 뒤에 붙인다
+        order = [chosen] + [k for k in ("binance", "upbit", "bithumb", "coinbase") if k != chosen]
+        tries = [(k, builders[k]) for k in order]
         tries.append(("yahoo", lambda: fetch_yahoo(yahoo_sym, interval, limit)))
-    elif market == "kr":
-        toss_sym = preset["toss"] if preset else ("A" + symbol if symbol.isdigit() else symbol)
-        yahoo_sym = preset["yahoo"] if preset else (symbol + ".KS")
-        tries += [("toss_unofficial", lambda: fetch_toss(toss_sym, interval, limit)),
-                  ("yahoo", lambda: fetch_yahoo(yahoo_sym, interval, limit))]
+
+    else:
+        # 토스증권 공식 Open API — 한국/미국 주식 모두 커버.
+        # interval이 1m/1d 이고 TOSS_CLIENT_ID/TOSS_CLIENT_SECRET가 설정된 경우에만 시도.
+        if interval in ("1m", "1d") and toss_openapi.is_configured():
+            toss_sym = symbol.upper() if market == "us" else symbol
+            tries.append(("toss_openapi", lambda: [Candle(**c) for c in toss_openapi.fetch_candles(toss_sym, interval, limit)]))
+
+        if market == "us":
+            yahoo_sym = preset["yahoo"] if preset else symbol.upper()
+            tries.append(("yahoo", lambda: fetch_yahoo(yahoo_sym, interval, limit)))
+        elif market == "kr":
+            toss_sym = preset["toss"] if preset else ("A" + symbol if symbol.isdigit() else symbol)
+            yahoo_sym = preset["yahoo"] if preset else (symbol + ".KS")
+            tries += [("toss_unofficial", lambda: fetch_toss(toss_sym, interval, limit)),
+                      ("yahoo", lambda: fetch_yahoo(yahoo_sym, interval, limit))]
 
     last_err = None
     for name, fn in tries:
         try:
             candles = fn()
             if candles and len(candles) >= 10:
-                return {"candles": [asdict(c) for c in candles], "source": name}
+                note = None
+                if market == "crypto" and name != (exchange or DEFAULT_CRYPTO_EXCHANGE):
+                    used = CRYPTO_EXCHANGES.get(name, {}).get("label", name)
+                    note = f"{requested_label}에서 가져오지 못해 {used} 시세로 대신 표시합니다"
+                return {
+                    "candles": [asdict(c) for c in candles],
+                    "source": name,
+                    "currency": _source_currency(market, name),
+                    "note": note,
+                }
         except Exception as e:  # noqa: BLE001 - 폴백 체인이므로 모든 실패를 흡수
             last_err = e
             continue
 
     demo = generate_demo(symbol, interval, limit)
     return {"candles": [asdict(c) for c in demo], "source": "demo",
-            "note": f"실시간 데이터 연결 실패로 데모 데이터를 표시합니다"
+            "currency": _source_currency(market, "demo"),
+            "note": "실시간 데이터 연결 실패로 데모 데이터를 표시합니다"
                     + (f" ({last_err})" if last_err else "")}
+
+
+def _source_currency(market: Market, source: str) -> str:
+    if source in CRYPTO_EXCHANGES:
+        return CRYPTO_EXCHANGES[source]["currency"]
+    if market == "kr":
+        return "KRW"
+    if market == "crypto":
+        return "USD"
+    return "USD"

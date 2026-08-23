@@ -662,3 +662,6 @@ select:hover, input:hover { border-color: var(--border-2); }
 .direct-row { display: flex; gap: 8px; }
 .direct-row input { flex: 1; min-width: 0; }
 .direct-row .primary-btn { flex: 0 0 auto; padding: 9px 18px; }
+
+.field-hint { color: var(--ink-3); opacity: .75; margin-left: 4px; }
+#exchangeField.hidden { display: none; }
