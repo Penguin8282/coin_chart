@@ -17,6 +17,13 @@
 
 ## 기능
 
+- **문제 진단**: 시세가 안 나올 때 `/api/diag` 를 열면 데이터 소스별 연결 상태를
+  있는 그대로 보여줍니다 (예: `451 지역 차단`, `429 요청 한도 초과`, `404 종목 없음`).
+  폴백 체인이 실패를 조용히 삼키기 때문에, 원인을 확인하려면 이쪽을 보면 됩니다.
+  `?market=crypto&symbol=BTCUSDT&interval=1h` 처럼 대상을 지정할 수 있습니다.
+  - ⚠️ **바이낸스는 미국 IP를 차단합니다(HTTP 451).** 클라우드 서버가 미국 리전이면
+    `api.binance.com`이 막히므로, 지역 제한이 없는 공개 시세 엔드포인트
+    `data-api.binance.vision`을 먼저 시도하도록 해두었습니다.
 - **코인 거래소 선택**: 바이낸스(USDT) · 업비트(KRW) · 빗썸(KRW) · 코인베이스(USD) 중에서
   시세를 가져올 곳을 직접 고를 수 있습니다. 국내 거래소는 원화 기준이라 해외 거래소와
   가격이 다르며(김치프리미엄), 화면에도 출처와 통화를 함께 표시합니다. 선택한 거래소가
@@ -117,7 +124,8 @@ data/                       SQLite DB 파일 위치 (git 제외)
 
 ## API 요약
 
-- `GET /api/markets` — 마켓별 기본 심볼 목록
+- `GET /api/markets` — 마켓별 기본 심볼 목록 + 코인 거래소 목록
+- `GET /api/diag?market=&symbol=&interval=` — 데이터 소스별 연결 진단
 - `GET /api/candles?market=&symbol=&interval=&limit=` — OHLCV 캔들
 - `GET /api/analysis?market=&symbol=&interval=&limit=` — 지표/점수/패턴 탐지 전체 결과
 - `GET/POST/DELETE /api/patterns/custom` — 사용자 정의 패턴 CRUD (`/rule`, `/shape` 하위 경로)
