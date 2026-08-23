@@ -167,7 +167,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 }
 .eyebrow .sep { color: var(--border-2); }
 .card-sub { color: var(--ink-2); font-size: 12.5px; line-height: 1.6; }
-.fineprint { color: var(--ink-3); font-size: 11px; line-height: 1.6; }
+.fineprint, .fine { color: var(--ink-3); font-size: 11px; line-height: 1.6; }
 
 /* ══════════════ 셸 ══════════════ */
 #shell { display: grid; grid-template-columns: 264px 1fr; height: 100vh; }
