@@ -1,12 +1,17 @@
 """사용자 정의 패턴 / 관심종목 저장소 (SQLite, 표준 라이브러리만 사용)."""
 from __future__ import annotations
 import json
+import os
 import sqlite3
 import time
 from pathlib import Path
 from contextlib import contextmanager
 
-DB_PATH = Path(__file__).resolve().parent.parent / "data" / "app.db"
+# 저장 위치는 DATA_DIR 환경변수로 바꿀 수 있다. 클라우드 배포 시 영구 디스크를
+# 마운트한 경로(예: /var/data)를 지정하면 재시작해도 커스텀 패턴이 유지된다.
+# 미지정 시 저장소 안의 data/ 폴더를 사용한다.
+_DATA_DIR = Path(os.environ.get("DATA_DIR") or (Path(__file__).resolve().parent.parent / "data"))
+DB_PATH = _DATA_DIR / "app.db"
 DB_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 
