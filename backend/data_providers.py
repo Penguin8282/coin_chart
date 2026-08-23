@@ -481,6 +481,43 @@ def _embed_head_and_shoulders(prices: list[float], start: int, scale: float):
 
 
 # ── 오케스트레이션 ────────────────────────────────────────────────────────
+# ── 캔들 캐시 ────────────────────────────────────────────────────────────
+# 스크리너는 수십 종목을 한 번에 훑기 때문에, 캐시가 없으면 같은 종목을 반복
+# 조회하며 거래소 요청 한도에 걸린다. 봉 하나가 마감되기 전에는 값이 바뀌지
+# 않으므로 간격에 맞춰 짧게 캐시한다.
+_CACHE_TTL = {"1m": 20, "5m": 60, "15m": 150, "30m": 300,
+              "1h": 300, "4h": 900, "1d": 1800, "1w": 3600}
+_cache: dict[tuple, tuple[float, dict]] = {}
+_CACHE_MAX = 300
+
+
+def _cache_get(key: tuple, interval: str) -> dict | None:
+    hit = _cache.get(key)
+    if not hit:
+        return None
+    ts, payload = hit
+    if time.time() - ts > _CACHE_TTL.get(interval, 300):
+        _cache.pop(key, None)
+        return None
+    return payload
+
+
+def _cache_put(key: tuple, payload: dict) -> None:
+    # 데모 데이터는 캐시하지 않는다 — 잠깐 실패했을 뿐인데 계속 가짜를 돌려주면 안 된다
+    if payload.get("source") == "demo":
+        return
+    if len(_cache) >= _CACHE_MAX:
+        oldest = min(_cache.items(), key=lambda kv: kv[1][0])[0]
+        _cache.pop(oldest, None)
+    _cache[key] = (time.time(), payload)
+
+
+def clear_candle_cache() -> int:
+    n = len(_cache)
+    _cache.clear()
+    return n
+
+
 def get_candles(market: Market, symbol: str, interval: str = "1d", limit: int = 500,
                 exchange: str | None = None) -> dict:
     """market/symbol에 맞는 프로바이더 체인을 순서대로 시도하고, 전부 실패하면
@@ -493,6 +530,11 @@ def get_candles(market: Market, symbol: str, interval: str = "1d", limit: int = 
 
     반환: {"candles": [...], "source": str, "currency": str, "note": str|None}
     """
+    cache_key = (market, symbol, interval, limit, exchange)
+    cached = _cache_get(cache_key, interval)
+    if cached is not None:
+        return cached
+
     preset = next((p for p in DEFAULT_SYMBOLS.get(market, []) if p["symbol"] == symbol), None)
 
     tries: list[tuple[str, object]] = []
@@ -548,12 +590,14 @@ def get_candles(market: Market, symbol: str, interval: str = "1d", limit: int = 
                     used = CRYPTO_EXCHANGES.get(name, {}).get("label", name)
                     reason = f" ({chosen_err})" if chosen_err else ""
                     note = f"{requested_label}에서 가져오지 못해{reason} {used} 시세로 대신 표시합니다"
-                return {
+                payload = {
                     "candles": [asdict(c) for c in candles],
                     "source": name,
                     "currency": _source_currency(market, name),
                     "note": note,
                 }
+                _cache_put(cache_key, payload)
+                return payload
         except httpx.HTTPStatusError as e:
             last_err = e
             if name == chosen_name:

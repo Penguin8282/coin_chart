@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>시그널 레저</title>
+<title>SmartSignal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,10 +23,19 @@
         <rect x="20" y="7"  width="6" height="23" rx="1.5"/>
         <path d="M3 14 L13 8 L22 11 L30 2" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <div class="brand-text"><span>SIGNAL</span><strong>LEDGER</strong></div>
+      <div class="brand-text"><span>SMART</span><strong>SIGNAL</strong></div>
+    </div>
+
+    <div class="side-block watch-block">
+      <div class="side-head">
+        <span>관심 종목 <b id="watchCount">0</b>개</span>
+        <button id="openPickerBtn" class="mini-btn" title="코인·국내주식·해외주식을 검색해 추가">＋ 종목 추가</button>
+      </div>
+      <div id="watchlistList"></div>
     </div>
 
     <nav id="nav">
+      <p class="nav-group">분석</p>
       <button class="nav-item active" data-view="overview">
         <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
         개요
@@ -35,26 +44,27 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2.4"/><circle cx="15" cy="12" r="2.4"/><circle cx="7" cy="18" r="2.4"/></svg>
         신호 장부
       </button>
+      <p class="nav-group">발굴</p>
+      <button class="nav-item" data-view="screener">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+        스크리너
+      </button>
+      <button class="nav-item" data-view="backtest">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18L9 12l4 3 7-8"/><path d="M20 7h-4M20 7v4"/></svg>
+        백테스트
+      </button>
+      <p class="nav-group">설정</p>
       <button class="nav-item" data-view="settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2.4"/><circle cx="10" cy="16" r="2.4"/></svg>
         표시 설정
       </button>
     </nav>
 
-    <div class="side-block">
-      <div class="side-head">
-        <span>관심 종목 <b id="watchCount">0</b>개</span>
-        <button id="openPickerBtn" class="mini-btn" title="코인·국내주식·해외주식을 검색해 추가">＋ 종목 추가</button>
-      </div>
-      <div id="watchlistList"></div>
-    </div>
-
-    <div class="side-block">
-      <div class="side-head"><span>현재 표시 <b id="layerCount">0/6</b></span></div>
-      <button class="layer-jump" data-view="settings">
+    <div class="side-foot">
+      <button class="layer-jump" data-view="settings" title="표시 설정에서 수정">
         <div>
           <strong id="layerSummary">레이어 설정</strong>
-          <span>표시 설정에서 바로 수정</span>
+          <span>현재 표시 <b id="layerCount">0/6</b></span>
         </div>
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 6l6 6-6 6"/></svg>
       </button>
@@ -70,6 +80,21 @@
   <div id="main">
 
     <header id="topline">
+      <button id="symbolBtn" class="symbol-btn" title="종목 바꾸기 (Ctrl+K)" aria-haspopup="dialog">
+        <span class="sb-sym" id="symbolBtnSym">—</span>
+        <span class="sb-name" id="symbolBtnName">종목 선택</span>
+        <kbd class="sb-key">Ctrl K</kbd>
+      </button>
+
+      <div class="segmented" id="tfSegmented" role="group" aria-label="시간 단위">
+        <button data-tf="15m">15분</button>
+        <button data-tf="1h" class="active">1시간</button>
+        <button data-tf="4h">4시간</button>
+        <button data-tf="1d">1일</button>
+      </div>
+
+      <div class="top-spacer"></div>
+
       <div class="feed-state">
         <svg class="feed-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1.2"/></svg>
         <span id="feedLabel">연결 중</span>
@@ -78,7 +103,14 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
         <span id="updatedAt">—</span>
       </div>
-      <button id="refreshBtn" class="icon-btn" title="새로고침">
+      <button id="themeBtn" class="icon-btn" title="라이트/다크 전환" aria-label="테마 전환">
+        <svg class="icon-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13.5A8 8 0 1 1 10.5 4a6.5 6.5 0 0 0 9.5 9.5z"/></svg>
+        <svg class="icon-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/></svg>
+      </button>
+      <button id="helpBtn" class="icon-btn" title="단축키 (?)" aria-label="단축키 도움말">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.2 2.9c-.6.2-.8.7-.8 1.2v.4M12 16.8v.01"/></svg>
+      </button>
+      <button id="refreshBtn" class="icon-btn" title="새로고침 (R)">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4M20 5v6h-6"/></svg>
       </button>
     </header>
@@ -103,12 +135,6 @@
         </article>
 
         <div class="control-row">
-          <div class="segmented" id="tfSegmented" role="group" aria-label="시간 단위">
-            <button data-tf="15m">15분</button>
-            <button data-tf="1h" class="active">1시간</button>
-            <button data-tf="4h">4시간</button>
-            <button data-tf="1d">1일</button>
-          </div>
           <div class="chip-row">
             <button class="chip" data-chip="ledger" data-tone="mint">
               <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
@@ -263,6 +289,125 @@
         </div>
       </section>
 
+      <!-- ─────────── 스크리너 ─────────── -->
+      <section class="view" data-view="screener">
+        <div class="ledger-head">
+          <div>
+            <p class="eyebrow">SCREENER</p>
+            <h1>지금 신호가 뜬 종목</h1>
+          </div>
+          <span class="regime-pill" id="scrMeta">—</span>
+        </div>
+
+        <article class="card">
+          <header class="card-head"><div>
+            <p class="eyebrow">조건</p>
+            <h2>무엇을 훑을지</h2>
+          </div></header>
+          <div class="filter-grid">
+            <div class="field">
+              <label for="scrScope">범위</label>
+              <select id="scrScope">
+                <option value="watchlist">관심종목</option>
+                <option value="crypto">코인 전체</option>
+                <option value="kr">국내주식 전체</option>
+                <option value="us">해외주식 전체</option>
+                <option value="all">전부</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="scrInterval">시간 단위</label>
+              <select id="scrInterval">
+                <option value="15m">15분</option>
+                <option value="1h" selected>1시간</option>
+                <option value="4h">4시간</option>
+                <option value="1d">1일</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="scrDirection">방향</label>
+              <select id="scrDirection">
+                <option value="any">매수 + 매도</option>
+                <option value="buy">매수만</option>
+                <option value="sell">매도만</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="scrMinScore">최소 점수</label>
+              <select id="scrMinScore">
+                <option value="0">전체</option>
+                <option value="5" selected>5점 이상</option>
+                <option value="7">7점 이상</option>
+                <option value="10">10점 이상</option>
+              </select>
+            </div>
+            <div class="field field-end">
+              <button id="scrRunBtn" class="primary-btn">스캔 실행</button>
+            </div>
+          </div>
+          <p class="fine" id="scrHint">한 번에 최대 40종목까지 훑습니다. 시세를 못 가져온 종목은 점수가 무의미하므로 결과에서 제외합니다.</p>
+        </article>
+
+        <article class="card">
+          <header class="card-head">
+            <div><p class="eyebrow">결과</p><h2 id="scrCount">스캔을 실행하세요</h2></div>
+          </header>
+          <div class="table-wrap"><table id="scrTable"></table></div>
+          <div id="scrSkipped"></div>
+        </article>
+      </section>
+
+      <!-- ─────────── 백테스트 ─────────── -->
+      <section class="view" data-view="backtest">
+        <div class="ledger-head">
+          <div>
+            <p class="eyebrow">BACKTEST <span class="sep">/</span> <span id="btSymbol">—</span></p>
+            <h1>이 신호를 따랐다면</h1>
+          </div>
+          <span class="regime-pill" id="btMeta">—</span>
+        </div>
+
+        <article class="card">
+          <header class="card-head"><div>
+            <p class="eyebrow">조건</p>
+            <h2>어떻게 검증할지</h2>
+          </div></header>
+          <div class="filter-grid">
+            <div class="field">
+              <label for="btMinScore">진입 기준 점수</label>
+              <select id="btMinScore">
+                <option value="5">5점 이상</option>
+                <option value="7" selected>7점 이상</option>
+                <option value="10">10점 이상</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="btMaxBars">최대 보유 봉</label>
+              <select id="btMaxBars">
+                <option value="24">24봉</option>
+                <option value="48" selected>48봉</option>
+                <option value="96">96봉</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="btFee">왕복 수수료 <span class="field-hint">슬리피지 포함</span></label>
+              <select id="btFee">
+                <option value="0">0%</option>
+                <option value="0.1" selected>0.1%</option>
+                <option value="0.25">0.25%</option>
+                <option value="0.5">0.5%</option>
+              </select>
+            </div>
+            <div class="field field-end">
+              <button id="btRunBtn" class="primary-btn">백테스트 실행</button>
+            </div>
+          </div>
+          <p class="fine">화면 위쪽에 선택된 종목·시간 단위로 계산합니다. 다른 종목을 보려면 위 종목 버튼을 누르거나 <kbd class="sb-key">Ctrl K</kbd> 를 누르세요.</p>
+        </article>
+
+        <div id="btResult"></div>
+      </section>
+
       <!-- ─────────── 표시 설정 ─────────── -->
       <section class="view" data-view="settings">
         <div class="ledger-head">
@@ -275,11 +420,12 @@
         <div class="settings-grid">
           <article class="card">
             <header class="card-head"><div>
-              <p class="eyebrow">종목 선택</p>
-              <h2>무엇을 볼지</h2>
+              <p class="eyebrow">시세 출처</p>
+              <h2>어디에서 가져올지</h2>
+              <p class="card-sub">한 번 정해두면 계속 쓰는 값입니다. 종목과 시간 단위는 화면 위쪽에서 바로 바꿀 수 있습니다.</p>
             </div></header>
             <div class="field">
-              <label for="marketSelect">시장</label>
+              <label for="marketSelect">기본 시장</label>
               <select id="marketSelect">
                 <option value="crypto">코인</option>
                 <option value="us">미국주식</option>
@@ -290,25 +436,9 @@
               <label for="exchangeSelect">거래소 <span class="field-hint">코인 시세를 어디에서 가져올지</span></label>
               <select id="exchangeSelect"></select>
             </div>
-            <div class="field">
-              <label for="symbolSelect">종목</label>
-              <select id="symbolSelect"></select>
-            </div>
-            <div class="field">
-              <label for="customSymbol">티커 직접입력</label>
-              <input id="customSymbol" placeholder="예: NVDA, 000660" />
-            </div>
-            <div class="field">
-              <label for="intervalSelect">시간 단위</label>
-              <select id="intervalSelect">
-                <option value="15m">15분</option>
-                <option value="1h" selected>1시간</option>
-                <option value="4h">4시간</option>
-                <option value="1d">1일</option>
-                <option value="1w">1주</option>
-              </select>
-            </div>
-            <button id="loadBtn" class="primary-btn wide-btn">불러오기</button>
+            <button class="ghost-btn wide-btn" id="openPaletteFromSettings">
+              종목 찾아보기 <kbd class="sb-key">Ctrl K</kbd>
+            </button>
           </article>
 
           <article class="card">
@@ -324,6 +454,53 @@
               <label class="switch"><input type="checkbox" id="tgRf"><span class="track"></span><span class="switch-label"><i style="background:var(--s-rf)"></i>Range Filter</span></label>
               <label class="switch"><input type="checkbox" id="tgFbb"><span class="track"></span><span class="switch-label"><i style="background:var(--s-fbb)"></i>Fibonacci BB</span></label>
             </div>
+          </article>
+
+          <article class="card">
+            <header class="card-head"><div>
+              <p class="eyebrow">화면</p>
+              <h2>어떻게 보일지</h2>
+            </div></header>
+            <div class="field">
+              <label for="themeSelect">테마</label>
+              <select id="themeSelect">
+                <option value="dark">다크</option>
+                <option value="light">라이트</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="densitySelect">정보 밀도 <span class="field-hint">한 화면에 얼마나 담을지</span></label>
+              <select id="densitySelect">
+                <option value="compact">컴팩트</option>
+                <option value="normal">기본</option>
+                <option value="pro">프로 (최대 밀도)</option>
+              </select>
+            </div>
+          </article>
+
+          <article class="card">
+            <header class="card-head"><div>
+              <p class="eyebrow">지표 파라미터</p>
+              <h2>어떻게 계산할지</h2>
+            </div></header>
+            <p class="card-sub">신호 점수 계산에 쓰이는 값입니다. 바꾸면 22점 스코어와 탐지 결과가 함께 달라집니다.</p>
+            <div class="param-row">
+              <label for="paramVolLen">거래량 MA 기간</label>
+              <input id="paramVolLen" type="number" min="5" max="200" step="1" value="20" />
+            </div>
+            <div class="param-row">
+              <label for="paramFibLen">피보나치 기간</label>
+              <input id="paramFibLen" type="number" min="20" max="500" step="1" value="100" />
+            </div>
+            <div class="param-row">
+              <label for="paramAdxThr">ADX 추세 기준</label>
+              <input id="paramAdxThr" type="number" min="10" max="60" step="0.5" value="25" />
+            </div>
+            <div class="param-actions">
+              <button id="paramResetBtn" class="ghost-btn">기본값으로</button>
+              <button id="paramApplyBtn" class="primary-btn">적용</button>
+            </div>
+            <div id="paramError" class="error"></div>
           </article>
 
           <article class="card">
@@ -344,36 +521,33 @@
   </div><!-- /main -->
 </div><!-- /shell -->
 
-<!-- 종목 추가 -->
+<!-- 종목 찾기 — 보러 가기와 관심종목 담기를 한 자리에서 -->
 <div id="pickerModal" class="modal hidden">
   <div class="modal-box picker-box">
-    <div class="modal-head">
-      <h3>관심종목 추가</h3>
+    <div class="search-field palette-search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
+      <input id="pickerSearch" placeholder="종목명 또는 티커로 검색 — 이더리움, XRP, 삼성, NVDA" autocomplete="off" />
       <button id="closePickerBtn" class="icon-btn" aria-label="닫기">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
       </button>
     </div>
 
     <div class="tabs" id="pickerTabs">
-      <button class="tab active" data-pmarket="crypto">코인</button>
+      <button class="tab active" data-pmarket="all">전체</button>
+      <button class="tab" data-pmarket="crypto">코인</button>
       <button class="tab" data-pmarket="kr">국내주식</button>
       <button class="tab" data-pmarket="us">해외주식</button>
     </div>
 
-    <div class="search-field">
-      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
-      <input id="pickerSearch" placeholder="종목명 또는 티커로 검색 (예: 이더리움, XRP, 삼성)" autocomplete="off" />
-    </div>
+    <div id="pickerResults" class="picker-results" role="listbox"></div>
 
-    <div id="pickerResults" class="picker-results"></div>
+    <div id="pickerError" class="error"></div>
 
-    <div class="picker-direct">
-      <p class="fineprint">목록에 없는 종목은 티커를 직접 입력해 추가하세요. 국내주식은 6자리 종목코드(예: 005930), 해외주식은 티커(예: NVDA), 코인은 바이낸스 심볼(예: PEPEUSDT)입니다.</p>
-      <div class="direct-row">
-        <input id="directSymbol" placeholder="티커 직접입력" autocomplete="off" />
-        <button id="directAddBtn" class="primary-btn">추가</button>
-      </div>
-      <div id="pickerError" class="error"></div>
+    <div class="palette-foot">
+      <span><kbd>↑</kbd><kbd>↓</kbd> 이동</span>
+      <span><kbd>Enter</kbd> 보러가기</span>
+      <span><kbd>Ctrl</kbd>+<kbd>Enter</kbd> 관심종목 담기</span>
+      <span><kbd>Esc</kbd> 닫기</span>
     </div>
   </div>
 </div>
@@ -422,6 +596,25 @@
       <div class="modal-actions"><button id="saveShapeBtn" class="primary-btn" disabled>저장</button></div>
       <div id="shapeError" class="error"></div>
     </div>
+  </div>
+</div>
+
+<div id="shortcutHelp" class="modal hidden">
+  <div class="modal-box help-box">
+    <div class="modal-head">
+      <h3>단축키</h3>
+      <button class="icon-btn" data-close aria-label="닫기">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+    <dl class="help-list">
+      <dt><kbd>Ctrl</kbd>+<kbd>K</kbd></dt><dd>종목 찾기 — 한글명·영문명·티커 아무거나</dd>
+      <dt><kbd>1</kbd>…<kbd>8</kbd></dt><dd>왼쪽 메뉴 순서대로 화면 전환</dd>
+      <dt><kbd>R</kbd></dt><dd>지금 종목 새로고침</dd>
+      <dt><kbd>?</kbd></dt><dd>이 도움말 열고 닫기</dd>
+      <dt><kbd>Esc</kbd></dt><dd>열려 있는 창 닫기</dd>
+    </dl>
+    <p class="fine">글자를 입력하는 중에는 단축키가 동작하지 않습니다.</p>
   </div>
 </div>
 

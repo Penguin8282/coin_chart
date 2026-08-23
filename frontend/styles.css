@@ -1,8 +1,13 @@
 /* ═══════════════════════════════════════════════════════════════
-   시그널 레저 — 다크 단일 테마.
-   트레이딩 데스크는 어두운 화면에 오래 머무는 도구라, 라이트 테마로
-   자동 반전시키지 않고 하나의 시각 세계에 의도적으로 고정한다.
-   대신 모든 색은 토큰으로 명시해 호스트 배경을 빌려오지 않는다.
+   SmartSignal — 토큰 정의
+
+   트레이딩 화면은 어두운 배경에 오래 머무는 도구라 다크를 기본값으로 둔다.
+   그래서 라이트가 아니라 다크 팔레트를 bare :root 에 둔다 — 이러면 JS가
+   실패하거나 아직 안 붙었을 때도 의도한 기본 화면이 그대로 나온다.
+   라이트는 [data-theme="light"] 로만 덮어쓴다.
+
+   밀도(compact/normal/pro)는 간격·글자크기 토큰만 바꾼다. 색과 구조는
+   건드리지 않으므로 어떤 조합이어도 화면이 깨지지 않는다.
    ═══════════════════════════════════════════════════════════════ */
 :root {
   color-scheme: dark;
@@ -21,19 +26,21 @@
   /* UI 크롬 전용 강조색 — 차트 시리즈에는 쓰지 않는다 */
   --accent:     #3EE8B0;
   --accent-dim: #1C6D55;
+  --accent-ink: #04211A;   /* 강조색 위에 올리는 글자색 */
 
   /* 예약된 상태색 — 항상 텍스트/아이콘과 함께 쓴다 */
   --bull:       #2BB98A;
   --bear:       #E5484D;
   --warn:       #E0A32E;
 
-  /* 검증 통과한 카테고리 시리즈 (validate_palette.js, dark #0E1519) */
+  /* 검증 통과한 카테고리 시리즈 (validate_palette.js, dark surface #0E1519) */
   --s-ema:      #199e70;
   --s-vwap:     #c98500;
   --s-rf:       #3987e5;
   --s-band:     #46606B;   /* 포락선 — 정체성 시리즈가 아니므로 후퇴 */
   --s-fib:      #7C8FA6;
   --s-fbb:      #8E6FB0;
+  --grid:       #152128;
 
   --tone-mint:   #3EE8B0;
   --tone-blue:   #5B9CF0;
@@ -41,12 +48,94 @@
   --tone-violet: #A98BE0;
   --tone-slate:  #7E949A;
 
+  --shadow-modal: 0 24px 70px rgba(0,0,0,.6);
+  --shadow-pop:   0 8px 26px rgba(0,0,0,.55);
+  --scrim:        rgba(3, 7, 9, .74);
+
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;
 
   --sans: "IBM Plex Sans KR", -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* 밀도 토큰 — 기본(normal) */
+  --pad-card:   20px 22px;
+  --pad-view:   26px 30px 60px;
+  --gap-card:   16px;
+  --gap-inner:  14px;
+  --fs-base:    14px;
+  --fs-h1:      46px;
+  --fs-h2:      19px;
+  --fs-price:   34px;
+  --row-pad:    10px;
+}
+
+/* 라이트 — 종이 위 잉크에 가깝게. 시리즈 색은 밝은 배경에서 대비가 나도록
+   같은 계열의 더 진한 단계를 쓴다(단순 반전이 아님). */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg:         #F4F7F6;
+  --surface-1:  #FFFFFF;
+  --surface-2:  #F1F5F4;
+  --surface-3:  #E6ECEA;
+  --border:     #DCE4E2;
+  --border-2:   #C3CFCC;
+
+  --ink:        #10201C;
+  --ink-2:      #4E635E;
+  --ink-3:      #7C918C;
+
+  --accent:     #0B8F68;
+  --accent-dim: #C6EBDC;
+  --accent-ink: #FFFFFF;
+
+  --bull:       #0E8A63;
+  --bear:       #C4322F;
+  --warn:       #A2700F;
+
+  --s-ema:      #12805A;
+  --s-vwap:     #A06A00;
+  --s-rf:       #2a78d6;
+  --s-band:     #8598A0;
+  --s-fib:      #63788C;
+  --s-fbb:      #6E4F94;
+  --grid:       #E4EBE9;
+
+  --tone-mint:   #0B8F68;
+  --tone-blue:   #2a78d6;
+  --tone-amber:  #A2700F;
+  --tone-violet: #6E4F94;
+  --tone-slate:  #5C7076;
+
+  --shadow-modal: 0 20px 56px rgba(16, 32, 28, .18);
+  --shadow-pop:   0 8px 22px rgba(16, 32, 28, .14);
+  --scrim:        rgba(16, 32, 28, .38);
+}
+
+/* 밀도 프리셋 — 간격과 글자크기만 조정한다 */
+:root[data-density="compact"] {
+  --pad-card:  14px 16px;
+  --pad-view:  18px 20px 44px;
+  --gap-card:  11px;
+  --gap-inner: 10px;
+  --fs-base:   13px;
+  --fs-h1:     36px;
+  --fs-h2:     17px;
+  --fs-price:  27px;
+  --row-pad:   7px;
+}
+:root[data-density="pro"] {
+  --pad-card:  11px 13px;
+  --pad-view:  13px 16px 36px;
+  --gap-card:  8px;
+  --gap-inner: 8px;
+  --fs-base:   12.5px;
+  --fs-h1:     30px;
+  --fs-h2:     15px;
+  --fs-price:  23px;
+  --row-pad:   5px;
 }
 
 * { box-sizing: border-box; }
@@ -56,7 +145,7 @@ html, body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-base);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
@@ -78,17 +167,23 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 }
 .eyebrow .sep { color: var(--border-2); }
 .card-sub { color: var(--ink-2); font-size: 12.5px; line-height: 1.6; }
-.fineprint { color: var(--ink-3); font-size: 11px; line-height: 1.6; }
+.fineprint, .fine { color: var(--ink-3); font-size: 11px; line-height: 1.6; }
 
 /* ══════════════ 셸 ══════════════ */
-#shell { display: grid; grid-template-columns: 264px 1fr; height: 100vh; }
+/* grid-template-rows 를 안 주면 암묵적 행이 auto 라서, 사이드바 내용이 길어질 때
+   행 자체가 100vh 를 넘어 자란다. 그러면 overflow-y:auto 가 걸릴 곳이 없어져
+   맨 아래 항목이 화면 밖으로 밀려난다. minmax(0,1fr) 로 행을 화면에 묶어둔다. */
+#shell {
+  display: grid; grid-template-columns: 264px 1fr; grid-template-rows: minmax(0, 1fr);
+  height: 100vh; overflow: hidden;
+}
 
 #sidebar {
   background: var(--surface-1);
   border-right: 1px solid var(--border);
   display: flex; flex-direction: column; gap: 22px;
   padding: 22px 18px;
-  overflow-y: auto;
+  overflow-y: auto; min-height: 0;
 }
 
 .brand { display: flex; align-items: center; gap: 11px; padding: 0 4px; }
@@ -185,11 +280,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .disclaimer svg { width: 15px; height: 15px; flex: 0 0 auto; margin-top: 1px; }
 
 /* ══════════════ 메인 ══════════════ */
-#main { display: flex; flex-direction: column; min-width: 0; }
+#main { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 
 #topline {
-  display: flex; align-items: center; gap: 18px;
-  padding: 14px 30px; justify-content: flex-end;
+  display: flex; align-items: center; gap: 14px;
+  padding: 12px 30px;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-1) 55%, transparent);
 }
@@ -207,8 +302,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .icon-btn:hover { color: var(--accent); border-color: var(--accent-dim); }
 .icon-btn.busy { opacity: .5; pointer-events: none; }
 
-#viewport { flex: 1; overflow-y: auto; padding: 26px 30px 60px; }
-.view { display: none; flex-direction: column; gap: 18px; max-width: 1580px; }
+#viewport { flex: 1; overflow-y: auto; padding: var(--pad-view); }
+.view { display: none; flex-direction: column; gap: var(--gap-card); max-width: 1580px; }
 .view.active { display: flex; }
 
 /* ══════════════ 판정 히어로 ══════════════ */
@@ -227,14 +322,14 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .verdict-body, .verdict-price { position: relative; z-index: 1; }
 .verdict-body { display: flex; flex-direction: column; gap: 9px; }
 #verdictWord {
-  font-size: 46px; font-weight: 700; line-height: 1.05;
+  font-size: var(--fs-h1); font-weight: 700; line-height: 1.05;
   color: var(--verdict-tone, var(--ink));
 }
 .verdict-sub { color: var(--ink-2); font-size: 13px; }
 .verdict-price { text-align: right; display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
 .verdict-price .eyebrow { justify-content: flex-end; }
 #priceValue {
-  font-family: var(--mono); font-size: 34px; font-weight: 600;
+  font-family: var(--mono); font-size: var(--fs-price); font-weight: 600;
   letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
 }
 .delta { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
@@ -284,11 +379,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 /* ══════════════ 카드 공통 ══════════════ */
 .card {
   background: var(--surface-1); border: 1px solid var(--border);
-  border-radius: var(--r-lg); padding: 20px 22px;
-  display: flex; flex-direction: column; gap: 14px; min-width: 0;
+  border-radius: var(--r-lg); padding: var(--pad-card);
+  display: flex; flex-direction: column; gap: var(--gap-inner); min-width: 0;
 }
 .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-.card-head h2 { font-size: 19px; font-weight: 600; margin-top: 3px; }
+.card-head h2 { font-size: var(--fs-h2); font-weight: 600; margin-top: 3px; }
 .head-icon { width: 20px; height: 20px; color: var(--ink-3); flex: 0 0 auto; }
 .regime-pill {
   font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 999px;
@@ -304,8 +399,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 }
 
 /* ══════════════ 개요 그리드 ══════════════ */
-.overview-grid { display: grid; grid-template-columns: minmax(0, 1.62fr) minmax(320px, 1fr); gap: 16px; }
-.overview-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.overview-grid { display: grid; grid-template-columns: minmax(0, 1.62fr) minmax(320px, 1fr); gap: var(--gap-card); }
+.overview-side { display: flex; flex-direction: column; gap: var(--gap-card); min-width: 0; }
 
 .legend { display: flex; gap: 16px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
 .legend li { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-2); }
@@ -318,7 +413,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
   background: var(--surface-3); border: 1px solid var(--border-2);
   border-radius: var(--r-sm); padding: 8px 11px;
   font-family: var(--mono); font-size: 11px; line-height: 1.65; white-space: pre;
-  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  box-shadow: var(--shadow-pop);
 }
 .plot-tip.hidden { display: none; }
 
@@ -353,7 +448,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .level-list { margin: 0; display: flex; flex-direction: column; gap: 0; }
 .level-row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 10px 0; border-bottom: 1px solid var(--border);
+  padding: var(--row-pad) 0; border-bottom: 1px solid var(--border);
 }
 .level-row:last-child { border-bottom: none; }
 .level-row.spacer-top { margin-top: 6px; padding-top: 15px; border-top: 1px solid var(--border); }
@@ -366,7 +461,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .level-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
 
 /* ══════════════ 지표 타일 ══════════════ */
-.tile-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.tile-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gap-card); }
 .tile {
   background: var(--surface-1); border: 1px solid var(--border);
   border-radius: var(--r-lg); padding: 18px 20px;
@@ -409,8 +504,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .note-banner { font-size: 12px; color: var(--warn); }
 .note-banner:empty { display: none; }
 
-.ledger-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
-.ledger-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ledger-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--gap-card); align-items: start; }
+.ledger-side { display: flex; flex-direction: column; gap: var(--gap-card); min-width: 0; }
 .chart-card { padding: 14px; }
 .chart-stack { position: relative; display: flex; flex-direction: column; }
 #chartCanvas { width: 100%; height: 460px; display: block; cursor: crosshair; }
@@ -465,7 +560,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .custom-pat-row .del-btn:hover { color: var(--bear); background: color-mix(in srgb, var(--bear) 14%, transparent); }
 
 /* ══════════════ 표시 설정 ══════════════ */
-.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 16px; align-items: start; }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: var(--gap-card); align-items: start; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 11.5px; color: var(--ink-3); }
 select, input[type="text"], input:not([type]), input[type="number"] {
@@ -500,7 +595,7 @@ select:hover, input:hover { border-color: var(--border-2); }
 
 /* ══════════════ 버튼 ══════════════ */
 .primary-btn {
-  background: var(--accent); border: none; color: #04211A;
+  background: var(--accent); border: none; color: var(--accent-ink);
   border-radius: var(--r-md); padding: 11px 20px; font-size: 13px; font-weight: 700;
 }
 .primary-btn:hover { background: color-mix(in srgb, var(--accent) 84%, white); }
@@ -515,7 +610,7 @@ select:hover, input:hover { border-color: var(--border-2); }
 /* ══════════════ 모달 ══════════════ */
 .modal {
   position: fixed; inset: 0; z-index: 100;
-  background: rgba(3, 7, 9, .74);
+  background: var(--scrim);
   display: flex; align-items: center; justify-content: center; padding: 20px;
 }
 .modal.hidden { display: none; }
@@ -523,7 +618,7 @@ select:hover, input:hover { border-color: var(--border-2); }
   background: var(--surface-1); border: 1px solid var(--border-2);
   border-radius: var(--r-lg); width: 480px; max-height: 88vh; overflow-y: auto;
   padding: 22px; display: flex; flex-direction: column; gap: 14px;
-  box-shadow: 0 24px 70px rgba(0,0,0,.6);
+  box-shadow: var(--shadow-modal);
 }
 .modal-head { display: flex; justify-content: space-between; align-items: center; }
 .modal-head h3 { font-size: 17px; font-weight: 600; }
@@ -572,7 +667,7 @@ select:hover, input:hover { border-color: var(--border-2); }
   background: var(--surface-3); color: var(--ink);
   border: 1px solid var(--border-2); border-radius: var(--r-sm);
   padding: 8px 11px; font-size: 11.5px; line-height: 1.6; white-space: pre-line;
-  box-shadow: 0 8px 26px rgba(0,0,0,.55);
+  box-shadow: var(--shadow-pop);
 }
 .tooltip.hidden { display: none; }
 
@@ -582,7 +677,7 @@ select:hover, input:hover { border-color: var(--border-2); }
   border: 1px solid var(--border-2); border-left: 3px solid var(--accent);
   border-radius: var(--r-md); padding: 12px 18px; font-size: 12.5px;
   max-width: 440px; z-index: 300; opacity: 0; pointer-events: none;
-  box-shadow: 0 12px 34px rgba(0,0,0,.55);
+  box-shadow: var(--shadow-modal);
   transition: opacity .22s, transform .22s;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -665,3 +760,207 @@ select:hover, input:hover { border-color: var(--border-2); }
 
 .field-hint { color: var(--ink-3); opacity: .75; margin-left: 4px; }
 #exchangeField.hidden { display: none; }
+
+/* ══════════════ 테마 토글 · 지표 파라미터 ══════════════ */
+#themeBtn .icon-light { display: none; }
+:root[data-theme="light"] #themeBtn .icon-dark { display: none; }
+:root[data-theme="light"] #themeBtn .icon-light { display: block; }
+
+.param-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: var(--row-pad) 0; border-bottom: 1px solid var(--border);
+}
+.param-row:last-of-type { border-bottom: none; }
+.param-row label { font-size: 12.5px; color: var(--ink-2); }
+.param-row input { width: 110px; text-align: right; font-family: var(--mono); }
+.param-actions { display: flex; gap: 8px; }
+.param-actions .ghost-btn, .param-actions .primary-btn { flex: 1; margin: 0; }
+
+/* ══════════════ 스크리너 · 백테스트 ══════════════ */
+.filter-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px; align-items: end;
+}
+.field-end { justify-content: flex-end; }
+.field-end .primary-btn { width: 100%; }
+
+.table-wrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.data th {
+  text-align: left; font-weight: 500; color: var(--ink-3);
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  padding: 0 10px var(--row-pad); white-space: nowrap;
+}
+table.data td { padding: var(--row-pad) 10px; border-top: 1px solid var(--border); white-space: nowrap; }
+table.data td.num, table.data th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+table.data tbody tr { cursor: pointer; }
+table.data tbody tr:hover { background: var(--surface-2); }
+table.data .sym { font-weight: 600; }
+table.data .mk { color: var(--ink-3); font-size: 10.5px; }
+.up { color: var(--bull); } .dn { color: var(--bear); }
+.score-cell { font-weight: 600; }
+
+.skip-note {
+  margin-top: 10px; padding: 10px 12px; border-radius: var(--r-sm); font-size: 11.5px; line-height: 1.6;
+  background: color-mix(in srgb, var(--warn) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 26%, transparent); color: var(--warn);
+}
+.empty-state { text-align: center; padding: 34px 0; color: var(--ink-3); font-size: 12.5px; }
+
+/* 수익 곡선 카드는 옆 칼럼 높이에 맞춰 늘어나지 않게 한다.
+   억지로 늘리면 몇 %짜리 움직임이 산맥처럼 보여 성과가 과장된다. */
+.equity-card { align-self: start; }
+.equity-plot { position: relative; height: clamp(240px, 32vh, 380px); }
+#equityCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.verdict-line {
+  padding: 12px 14px; border-radius: var(--r-sm); font-size: 12.5px; line-height: 1.6;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent); color: var(--accent);
+}
+.trade-row-tp { color: var(--bull); }
+.trade-row-sl { color: var(--bear); }
+.trade-row-timeout { color: var(--ink-3); }
+
+
+/* ══════════════ 상단 바: 지금 보는 종목 ══════════════
+   종목 바꾸기는 이 앱에서 가장 자주 하는 일이다. 설정 화면 안에 있으면
+   화면을 떠났다 돌아와야 해서, 항상 보이는 자리로 끌어올린다. */
+.symbol-btn {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px 7px 14px; border-radius: var(--r-md);
+  background: var(--surface-2); border: 1px solid var(--border);
+  color: var(--ink); min-width: 0;
+  transition: border-color .15s, background .15s;
+}
+.symbol-btn:hover { border-color: var(--accent-dim); background: var(--surface-3); }
+.symbol-btn .sb-sym {
+  font-family: var(--mono); font-size: 13.5px; font-weight: 600;
+  letter-spacing: .01em; white-space: nowrap;
+}
+.symbol-btn .sb-name {
+  font-size: 11.5px; color: var(--ink-3);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 190px;
+}
+.symbol-btn.loading .sb-sym { opacity: .5; }
+.sb-key {
+  font-family: var(--mono); font-size: 9.5px; letter-spacing: .06em;
+  padding: 3px 6px; border-radius: 5px; flex: 0 0 auto;
+  background: var(--surface-3); border: 1px solid var(--border-2); color: var(--ink-3);
+}
+.top-spacer { flex: 1; }
+#topline .segmented { flex: 0 0 auto; }
+
+@media (max-width: 1100px) {
+  .symbol-btn .sb-name, .sb-key { display: none; }
+}
+
+/* ══════════════ 사이드바 메뉴 묶음 ══════════════ */
+.nav-group {
+  font-family: var(--mono); font-size: 9.5px; font-weight: 600;
+  letter-spacing: .16em; text-transform: uppercase; color: var(--ink-3);
+  padding: 14px 12px 5px;
+}
+.nav-group:first-child { padding-top: 2px; }
+
+/* ══════════════ 종목 찾기 팔레트 ══════════════ */
+.palette-search { margin-bottom: 12px; }
+.palette-search input { padding-right: 44px; font-size: 14px; padding-top: 11px; padding-bottom: 11px; }
+.palette-search .icon-btn {
+  position: absolute; right: 6px; width: 28px; height: 28px; background: transparent; border: none;
+}
+.picker-row.cursor {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 10%, var(--surface-2));
+}
+.picker-row .pr-mk {
+  flex: 0 0 auto; font-size: 10px; color: var(--ink-3);
+  font-family: var(--mono); letter-spacing: .06em;
+  width: 30px; text-align: center;
+}
+.picker-row .pr-star {
+  flex: 0 0 auto; background: transparent; border: none; font-size: 15px;
+  color: var(--ink-3); width: 28px; height: 28px; border-radius: 6px; line-height: 1;
+}
+.picker-row .pr-star:hover { color: var(--warn); background: var(--surface-3); }
+.picker-row .pr-star.on { color: var(--warn); }
+.picker-row .pr-go {
+  flex: 0 0 auto; font-size: 11px; font-weight: 600; color: var(--ink-3); opacity: 0;
+}
+.picker-row.cursor .pr-go { opacity: 1; color: var(--accent); }
+
+.palette-foot {
+  display: flex; flex-wrap: wrap; gap: 14px; margin-top: 12px;
+  padding-top: 12px; border-top: 1px solid var(--border);
+  font-size: 11px; color: var(--ink-3);
+}
+.palette-foot span { display: flex; align-items: center; gap: 4px; }
+
+kbd {
+  font-family: var(--mono); font-size: 10px;
+  padding: 2px 5px; border-radius: 4px;
+  background: var(--surface-3); border: 1px solid var(--border-2); color: var(--ink-2);
+}
+
+/* ══════════════ 단축키 안내 ══════════════ */
+.help-box { width: 460px; }
+.help-list {
+  display: grid; grid-template-columns: auto 1fr; gap: 10px 16px;
+  margin: 4px 0 14px; align-items: baseline;
+}
+.help-list dt { display: flex; gap: 3px; align-items: center; white-space: nowrap; }
+.help-list dd { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+
+/* ══════════════ 표 안의 바로가기 버튼 ══════════════ */
+.row-act {
+  font-size: 11px; font-weight: 600; white-space: nowrap;
+  padding: 4px 10px; border-radius: 999px;
+  border: 1px solid var(--border-2); background: transparent; color: var(--ink-3);
+  opacity: 0; transition: opacity .12s, color .12s, border-color .12s;
+}
+table.data tbody tr:hover .row-act,
+.row-act:focus-visible { opacity: 1; }
+.row-act:hover { color: var(--accent); border-color: var(--accent-dim); }
+
+/* 관심종목이 잘려 보이면 더 있다는 걸 알기 어렵다 — 아래쪽을 흐리게 해 표시한다 */
+#watchlistList { max-height: 260px; position: relative; }
+.side-block.has-more { position: relative; }
+.side-block.has-more::after {
+  content: ""; position: absolute; left: 0; right: 0; bottom: 0; height: 26px;
+  pointer-events: none; border-radius: 0 0 var(--r-md) var(--r-md);
+  background: linear-gradient(to bottom, transparent, var(--surface-1));
+}
+
+
+/* ══════════════ 사이드바 우선순위 ══════════════
+   종목을 바꾸는 일이 화면을 옮기는 일보다 훨씬 잦다. 그래서 관심 종목이
+   맨 위에 오고, 화면 메뉴가 그 아래, 잘 안 쓰는 레이어 요약은 맨 밑이다. */
+/* 메뉴·레이어·고지는 길이가 고정이고, 관심 종목만 늘었다 줄었다 한다.
+   그래서 남는 세로 공간은 관심 종목이 가져간다 — 스크롤 막대가 사이드바와
+   목록 두 군데 겹쳐 생기지 않도록. */
+.watch-block {
+  flex: 1 1 auto; min-height: 156px;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.watch-block .side-head { font-size: 12px; color: var(--ink-2); flex: 0 0 auto; }
+.watch-block .side-head b { color: var(--accent); }
+.watch-block #watchlistList {
+  flex: 1 1 auto; max-height: none; min-height: 0; overflow-y: auto;
+}
+
+#nav { flex: 0 0 auto; }
+
+/* 레이어 요약은 표시 설정으로 가는 또 하나의 길일 뿐이라 맨 아래에서 조용히 있는다 */
+.side-foot { flex: 0 0 auto; padding-top: 4px; }
+.disclaimer { flex: 0 0 auto; }
+.side-foot .layer-jump { width: 100%; }
+.side-foot .layer-jump span b { color: var(--ink-2); font-family: var(--mono); }
+
+/* 관심종목이 비었을 때 — 여기가 사이드바의 첫 칸이라 빈 상태가 더 눈에 띈다 */
+.watch-empty {
+  display: flex; flex-direction: column; align-items: center; gap: 8px;
+  padding: 18px 12px; border-radius: var(--r-md);
+  border: 1px dashed var(--border-2); background: var(--surface-2);
+  text-align: center;
+}
+.watch-empty p { font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
+.watch-empty .mini-btn { white-space: nowrap; }

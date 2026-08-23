@@ -3,20 +3,62 @@
 
 const API = "/api";
 
-/* 검증된 시리즈 팔레트 (dataviz validate_palette.js, dark surface #0E1519 전 항목 통과).
-   민트 계열은 UI 크롬 전용이라 시리즈에 쓰지 않는다. */
+/* ── 화면 설정(테마·밀도·지표 파라미터) ─────────────────────────────
+   전부 브라우저에 저장한다. 지표 파라미터는 22점 스코어 계산에 직접
+   들어가므로, 값이 바뀌면 반드시 서버에 다시 물어봐야 한다. */
+const DEFAULT_PARAMS = { vol_len: 20, fib_len: 100, adx_thr: 25 };
+const PARAM_RANGE = {
+  vol_len: { min: 5, max: 200, label: "거래량 MA 기간" },
+  fib_len: { min: 20, max: 500, label: "피보나치 기간" },
+  adx_thr: { min: 10, max: 60, label: "ADX 추세 기준" },
+};
+
+function loadParams() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("ss.params") || "{}");
+    const out = { ...DEFAULT_PARAMS };
+    for (const k of Object.keys(DEFAULT_PARAMS)) {
+      const v = Number(saved[k]);
+      if (Number.isFinite(v) && v >= PARAM_RANGE[k].min && v <= PARAM_RANGE[k].max) out[k] = v;
+    }
+    return out;
+  } catch { return { ...DEFAULT_PARAMS }; }
+}
+
+/* 캔버스 색은 CSS 토큰에서 읽어온다. 그래야 테마를 바꿨을 때 차트도 같이
+   따라간다 — JS에 색을 박아두면 라이트 테마에서 차트만 어둡게 남는다.
+   (시리즈 색은 dataviz validate_palette.js 로 검증한 값이며 styles.css에 있다) */
 const C = {
-  ink: "#E3EDEB", ink2: "#93A8AC", ink3: "#5F7378",
-  grid: "#16222700", gridLine: "#152128",
+  ink: "#E3EDEB", ink2: "#93A8AC", ink3: "#5F7378", gridLine: "#152128",
   bull: "#2BB98A", bear: "#E5484D", warn: "#E0A32E", accent: "#3EE8B0",
   ema: "#199e70", vwap: "#c98500", rf: "#3987e5",
   band: "#46606B", fib: "#7C8FA6", fbb: "#8E6FB0",
+  surface1: "#0D1519",
 };
+
+const TOKEN_MAP = {
+  ink: "--ink", ink2: "--ink-2", ink3: "--ink-3", gridLine: "--grid",
+  bull: "--bull", bear: "--bear", warn: "--warn", accent: "--accent",
+  ema: "--s-ema", vwap: "--s-vwap", rf: "--s-rf",
+  band: "--s-band", fib: "--s-fib", fbb: "--s-fbb",
+  surface1: "--surface-1",
+};
+
+function syncChartColors() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const [key, token] of Object.entries(TOKEN_MAP)) {
+    const v = cs.getPropertyValue(token).trim();
+    if (v) C[key] = v;
+  }
+}
 
 const state = {
   market: "crypto", symbol: "BTCUSDT", interval: "1h", limit: 500,
   exchange: localStorage.getItem("sl.exchange") || "binance",
   currency: "USD",
+  theme: localStorage.getItem("ss.theme") || "dark",
+  density: localStorage.getItem("ss.density") || "normal",
+  params: loadParams(),
   data: null,
   view: { start: 0, count: 160 },
   toggles: { ema: true, vwap: true, bb: true, fib: true, rf: false, fbb: false,
@@ -90,8 +132,7 @@ const el = {
   chart: $("chartCanvas"), vol: $("volCanvas"), evidence: $("evidenceCanvas"),
   spark: $("verdictSpark"), obsSpark: $("obsSpark"),
   crosshair: $("crosshairReadout"), tooltip: $("tooltip"), evTip: $("evidenceTip"),
-  market: $("marketSelect"), symbol: $("symbolSelect"), custom: $("customSymbol"),
-  interval: $("intervalSelect"), loadBtn: $("loadBtn"), exchange: $("exchangeSelect"),
+  market: $("marketSelect"), exchange: $("exchangeSelect"),
 };
 const ctx = el.chart.getContext("2d");
 const vctx = el.vol.getContext("2d");
@@ -110,8 +151,9 @@ async function loadMarkets() {
   el.exchange.innerHTML = window.__exchanges
     .map(x => `<option value="${x.id}">${x.label} (${x.region} · ${x.currency})</option>`).join("");
   el.exchange.value = state.exchange;
-  populateSymbolSelect();
+  if (!state.symbol) state.symbol = defaultSymbol(state.market);
   updateExchangeField();
+  syncSymbolButton();
 }
 
 /* 거래소 선택은 코인일 때만 의미가 있다 */
@@ -124,10 +166,44 @@ function exchangeLabel(id) {
   return hit ? hit.label : id;
 }
 
-function populateSymbolSelect() {
-  const list = (window.__markets || {})[state.market] || [];
-  el.symbol.innerHTML = list.map(p => `<option value="${p.symbol}">${p.name} (${p.symbol})</option>`).join("");
-  if (list.length) state.symbol = list[0].symbol;
+function defaultSymbol(market) {
+  const list = (window.__markets || {})[market] || [];
+  return list.length ? list[0].symbol : "";
+}
+
+/* 상단 바의 종목 버튼을 현재 상태에 맞춘다 */
+function syncSymbolButton() {
+  if (!state.symbol) return;
+  $("symbolBtnSym").textContent = state.symbol;
+  $("symbolBtnName").textContent =
+    `${MARKET_LABEL[state.market] || state.market} · ${symbolDisplayName(state.market, state.symbol)}`;
+}
+
+/* 종목을 바꾸는 유일한 경로 — 관심종목·스크리너·검색이 모두 이걸 쓴다.
+   예전에는 같은 다섯 줄이 세 곳에 흩어져 있어서 한 곳만 고치면 나머지가 어긋났다. */
+function goToSymbol(market, symbol, opts = {}) {
+  state.market = market;
+  state.symbol = symbol;
+  el.market.value = market;
+  if (opts.interval) state.interval = opts.interval;
+  updateExchangeField();
+  syncSegmented();
+  syncSymbolButton();
+  invalidateBacktest();
+  if (opts.view) switchView(opts.view);
+  loadAnalysis();
+}
+
+/* 종목이나 시간 단위가 바뀌면 화면에 떠 있는 백테스트 결과는 남의 것이 된다.
+   조용히 놔두면 다른 종목 성적을 이 종목 성적으로 읽게 되므로 치우고 다시
+   실행하라고 알린다. */
+function invalidateBacktest() {
+  if (!state.btFor) return;
+  if (state.btFor.symbol === state.symbol && state.btFor.interval === state.interval) return;
+  state.btFor = null;
+  $("btSymbol").textContent = `${state.symbol} · ${TF_LABEL[state.interval] || state.interval}`;
+  $("btResult").innerHTML = `<div class="card"><div class="empty-state">
+    종목이 바뀌었습니다. <b>${state.symbol}</b> 로 다시 실행해주세요.</div></div>`;
 }
 
 function symbolDisplayName(market, symbol) {
@@ -148,18 +224,20 @@ const SOURCE_LABEL = {
 };
 
 async function loadAnalysis() {
-  const sym = el.custom.value.trim() || state.symbol;
+  const sym = state.symbol;
+  if (!sym) return;
   const btn = $("refreshBtn");
   btn.classList.add("busy");
-  el.loadBtn.disabled = true;
-  el.loadBtn.textContent = "불러오는 중…";
+  $("symbolBtn").classList.add("loading");
   try {
+    const p = state.params;
     const qs = `market=${state.market}&symbol=${encodeURIComponent(sym)}&interval=${state.interval}` +
-               `&limit=${state.limit}&exchange=${encodeURIComponent(state.exchange)}`;
+               `&limit=${state.limit}&exchange=${encodeURIComponent(state.exchange)}` +
+               `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}`;
     const data = await api(`/analysis?${qs}`);
     state.data = data;
-    state.symbol = sym;
     state.currency = data.currency || "USD";
+    syncSymbolButton();
     state.view.count = Math.min(160, data.candles.length);
     state.view.start = Math.max(0, data.candles.length - state.view.count);
 
@@ -174,8 +252,7 @@ async function loadAnalysis() {
     toast("데이터를 불러오지 못했습니다: " + e.message);
   } finally {
     btn.classList.remove("busy");
-    el.loadBtn.disabled = false;
-    el.loadBtn.textContent = "불러오기";
+    $("symbolBtn").classList.remove("loading");
   }
 }
 
@@ -253,11 +330,25 @@ function paint(context, canvas, fn) {
 
 function renderAll() {
   if (!state.data) return;
+  syncSymbolLabels();
   [el.chart, el.vol, el.evidence, el.spark, el.obsSpark].forEach(fitCanvas);
   renderOverview();
   drawChart();
   drawVolume();
   renderPatternList();
+}
+
+/* 종목 이름이 걸리는 곳을 한 군데서 맞춘다.
+   예전에는 switchView 에서만 갱신해서, 화면을 옮기지 않고 종목만 바꾸면
+   신호 장부 제목이 이전 종목 이름을 그대로 달고 있었다. */
+function syncSymbolLabels() {
+  syncSymbolButton();
+  $("ledgerSymbol").textContent = state.symbol;
+  // 백테스트 이름표는 '지금 화면에 뜬 결과'의 종목이다. 결과가 있는 동안에는
+  // 건드리지 않는다 — 안 그러면 BTC로 낸 성적 위에 ETH라고 써 붙이게 된다.
+  if (!state.btFor) {
+    $("btSymbol").textContent = `${state.symbol} · ${TF_LABEL[state.interval] || state.interval}`;
+  }
 }
 
 function line(context, pts, color, width = 1.4, dash = []) {
@@ -493,7 +584,7 @@ function drawEvidence() {
       ectx.beginPath(); ectx.moveTo(x, rect.y0); ectx.lineTo(x, rect.y1); ectx.stroke();
       ectx.restore();
       ectx.fillStyle = C.ink; ectx.beginPath(); ectx.arc(x, y, 4, 0, Math.PI * 2); ectx.fill();
-      ectx.strokeStyle = "#0D1519"; ectx.lineWidth = 2; ectx.stroke();
+      ectx.strokeStyle = C.surface1; ectx.lineWidth = 2; ectx.stroke();
     }
   });
 }
@@ -580,15 +671,54 @@ function drawChart() {
     drawCandles(sc, d.candles);
 
     const markers = [];
-    if (state.toggles.chartPat) drawChartPatterns(sc, d.chart_patterns, markers);
+    // 라벨 자리를 한 군데서 관리해야 서로 겹치지 않는다
+    const place = makeLabelPlacer(sc.rect);
+    // 점수 화살표와 캔들패턴 표식은 특정 봉에 붙어 있어 비켜줄 수 없다.
+    // 그래서 그 자리를 먼저 맡아두고, 움직일 수 있는 패턴 라벨이 피해 가게 한다.
+    reserveFixedMarks(sc, d, place);
+    if (state.toggles.customPat) drawCustomMatches(sc, d.custom_matches, markers, place);
+    if (state.toggles.chartPat) drawChartPatterns(sc, d.chart_patterns, markers, place);
     if (state.toggles.candlePat) drawCandlePatterns(sc, d.candle_patterns, markers);
-    if (state.toggles.customPat) drawCustomMatches(sc, d.custom_matches, markers);
     drawScoreMarkers(sc, d.events, d.series, markers);
+    // 이름을 생략한 게 있으면 숨기지 말고 몇 개인지 알린다
+    const hidden = place.dropped();
+    if (hidden) {
+      ctx.font = "10px 'IBM Plex Sans KR', sans-serif";
+      ctx.textAlign = "right"; ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = C.ink3;
+      ctx.fillText(`이름 생략 ${hidden}개 · 오른쪽 목록에서 확인`, sc.rect.x1 - 2, sc.rect.y0 - 4);
+      ctx.textAlign = "left";
+    }
     state.markersCache = markers;
 
     drawSelection(sc);
     drawCrosshair(sc);
   });
+}
+
+/* 움직일 수 없는 표식들이 차지한 자리를 라벨 배치기에 미리 알려준다 */
+function reserveFixedMarks(sc, d, place) {
+  const end = sc.start + sc.count;
+  if (state.toggles.candlePat) {
+    for (const p of d.candle_patterns || []) {
+      if (p.index < sc.start || p.index >= end) continue;
+      const cd = d.candles[p.index], x = sc.xOf(p.index);
+      const y = p.direction === "bearish" ? sc.yOf(cd.h) - 9 : sc.yOf(cd.l) + 9;
+      place.reserve(x - 6, y - 8, x + 6, y + 8);
+    }
+  }
+  const ev = d.events, S = d.series;
+  for (let i = sc.start; i < end; i++) {
+    const cd = d.candles[i]; if (!cd) continue;
+    if (ev.strong_buy[i] || ev.normal_buy[i]) {
+      const y = sc.yOf(cd.l) + (ev.strong_buy[i] ? 22 : 15), x = sc.xOf(i);
+      place.reserve(x - 13, y - 8, x + 22, y + 8);
+    }
+    if (ev.strong_sell[i] || ev.normal_sell[i]) {
+      const y = sc.yOf(cd.h) - (ev.strong_sell[i] ? 22 : 15), x = sc.xOf(i);
+      place.reserve(x - 13, y - 8, x + 22, y + 8);
+    }
+  }
 }
 
 function shade(sc, i, color) {
@@ -632,11 +762,98 @@ function drawCandles(sc, candles) {
 
 const PAT_TONE = { bullish: C.bull, bearish: C.bear, neutral: "#A98BE0" };
 
-function drawChartPatterns(sc, patterns, markers) {
+/* ── 차트 위 라벨 배치 ──────────────────────────────────────────
+   예전에는 패턴마다 마지막 꼭짓점 옆에 글자를 바로 찍었다. 그런데 더블탑과
+   헤드앤숄더처럼 오른쪽 어깨를 공유하는 패턴들은 마지막 점이 거의 같아서
+   라벨이 정확히 겹쳐 읽을 수가 없었다.
+
+   그래서 이미 놓인 라벨과 부딪히면 위아래로 한 칸씩 비켜 놓고, 옮긴 만큼
+   가는 선을 그어 어느 지점의 이름인지 남긴다. 열네 번 시도해도 자리가
+   없으면 글자는 포기한다 — 겹쳐서 못 읽는 것보다 낫고, 점선과 툴팁은
+   그대로라 마우스를 올리면 이름을 볼 수 있다. */
+function makeLabelPlacer(rect) {
+  const boxes = [];
+  const PAD = 2.5, STEP = 13, H = 14;
+  // 라벨이 안 겹치더라도 스무 개가 깔리면 정작 캔들이 안 보인다.
+  // 폭에 맞춰 몇 개까지만 이름을 달고, 나머지는 점선과 툴팁으로 남긴다.
+  const MAX = Math.max(4, Math.round(rect.w / 135));
+  let used = 0;
+
+  place.reserve = (x0, y0, x1, y1) => boxes.push({ x0, y0, x1, y1 });
+  place.dropped = () => Math.max(0, used - MAX);
+
+  function place(text, ax, ay, color, always) {
+    if (!always) {
+      used++;
+      if (used > MAX) return false;
+    }
+    const tw = ctx.measureText(text).width;
+    const w = tw + 9;
+
+    // 기본은 앵커의 오른쪽 위. 오른쪽 끝을 넘으면 왼쪽으로 뒤집는다.
+    let x = ax + 6;
+    let flip = false;
+    if (x + w > rect.x1 - 2) { x = ax - 6 - w; flip = true; }
+    if (x < rect.x0 + 2) { x = rect.x0 + 2; flip = false; }
+
+    const baseY = ay - 8 - H;
+    for (let k = 0; k < 14; k++) {
+      const step = Math.ceil(k / 2);
+      const y = baseY + (k % 2 === 1 ? -1 : 1) * step * STEP;
+      if (y < rect.y0 + 2 || y + H > rect.y1 - 2) continue;
+
+      const box = { x0: x - PAD, y0: y - PAD, x1: x + w + PAD, y1: y + H + PAD };
+      const hit = boxes.some(b =>
+        box.x1 > b.x0 && box.x0 < b.x1 && box.y1 > b.y0 && box.y0 < b.y1);
+      if (hit) continue;
+      boxes.push(box);
+
+      ctx.save();
+      // 원래 자리에서 멀어졌으면 어디 것인지 선으로 이어준다
+      const cy = y + H / 2;
+      if (Math.abs(cy - ay) > 10) {
+        ctx.strokeStyle = hexA(color, 0.42); ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(flip ? x + w : x, cy);
+        ctx.stroke();
+      }
+      // 캔들 위에 글자가 얹히면 안 읽히므로 옅은 판을 깐다
+      ctx.fillStyle = hexA(C.surface1, 0.82);
+      roundRect(ctx, x, y, w, H, 3); ctx.fill();
+      ctx.strokeStyle = hexA(color, 0.34); ctx.lineWidth = 1;
+      roundRect(ctx, x, y, w, H, 3); ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, x + 4.5, cy);
+      ctx.restore();
+      return true;
+    }
+    return false;   // 자리가 없으면 글자는 생략 (툴팁은 그대로)
+  }
+
+  return place;
+}
+
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+function drawChartPatterns(sc, patterns, markers, place) {
   const end = sc.start + sc.count;
   ctx.font = "10.5px 'IBM Plex Sans KR', sans-serif";
-  for (const p of patterns) {
-    if (p.end_idx < sc.start || p.start_idx > end) continue;
+  // 자리가 모자랄 때 신뢰도 높은 패턴이 먼저 이름을 갖도록 정렬한다
+  const visible = patterns
+    .filter(p => !(p.end_idx < sc.start || p.start_idx > end))
+    .sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+  for (const p of visible) {
     const color = PAT_TONE[p.direction] || PAT_TONE.neutral;
     ctx.save();
     ctx.strokeStyle = hexA(color, 0.8); ctx.lineWidth = 1.3; ctx.setLineDash([4, 3]);
@@ -649,7 +866,7 @@ function drawChartPatterns(sc, patterns, markers) {
     }
     const lastPt = p.points[p.points.length - 1];
     const lx = sc.xOf(lastPt.idx), ly = sc.yOf(lastPt.price);
-    ctx.fillStyle = color; ctx.fillText(p.name_kr, lx + 6, ly - 6);
+    place(p.name_kr, lx, ly, color);
     markers.push({ x0: sc.xOf(p.start_idx) - 4, x1: lx + 4, y0: sc.rect.y0, y1: sc.rect.y1,
       tooltip: `${p.name_kr}\n신뢰도 ${fmtPct(p.confidence)}${p.target ? `\n목표가 ${fmtPrice(p.target)}` : ""}\n${p.note || ""}` });
   }
@@ -671,7 +888,7 @@ function drawCandlePatterns(sc, patterns, markers) {
   }
 }
 
-function drawCustomMatches(sc, matches, markers) {
+function drawCustomMatches(sc, matches, markers, place) {
   const end = sc.start + sc.count;
   ctx.font = "10.5px 'IBM Plex Sans KR', sans-serif";
   for (const m of matches) {
@@ -692,8 +909,7 @@ function drawCustomMatches(sc, matches, markers) {
       ctx.strokeStyle = hexA(color, 0.5); ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
       ctx.strokeRect(x0, sc.rect.y0, x1 - x0, sc.rect.h);
       ctx.restore();
-      ctx.fillStyle = color;
-      ctx.fillText(`${m.name} ${Math.round(m.score * 100)}%`, x0 + 4, sc.rect.y0 + 12);
+      place(`${m.name} ${Math.round(m.score * 100)}%`, x0 + 2, sc.rect.y0 + 20, color, true);
       markers.push({ x0, x1, y0: sc.rect.y0, y1: sc.rect.y0 + 18, tooltip: `${m.name}\n모양 유사도 ${Math.round(m.score * 100)}%` });
     }
   }
@@ -804,7 +1020,13 @@ function watchBadge(w) {
 function renderWatchlist() {
   $("watchCount").textContent = state.watchlist.length;
   if (!state.watchlist.length) {
-    $("watchlistList").innerHTML = `<p class="empty-msg">관심종목이 없습니다</p>`;
+    // 사이드바 첫 칸이라 빈 상태가 눈에 띈다 — 뭘 하면 되는지까지 알려준다
+    $("watchlistList").innerHTML = `<div class="watch-empty">
+      <p>자주 보는 종목을 담아두면<br>여기에서 바로 열 수 있습니다.</p>
+      <button class="mini-btn" id="watchEmptyAdd">＋ 종목 찾기</button>
+    </div>`;
+    $("watchEmptyAdd").addEventListener("click", () => openPicker());
+    $("watchlistList").closest(".side-block")?.classList.remove("has-more");
     return;
   }
   $("watchlistList").innerHTML = state.watchlist.map(w => `
@@ -817,16 +1039,16 @@ function renderWatchlist() {
       <button class="del-btn" data-market="${w.market}" data-symbol="${w.symbol}" aria-label="${w.symbol} 삭제">${X_ICON}</button>
     </div>`).join("");
 
+  const box = $("watchlistList");
+  requestAnimationFrame(() => {
+    box.closest(".side-block")?.classList.toggle("has-more", box.scrollHeight > box.clientHeight + 4);
+  });
+
   $("watchlistList").querySelectorAll(".watch-row").forEach(row => {
     const go = (e) => {
       if (e.target.closest(".del-btn")) return;
       const { market, symbol } = row.dataset;
-      el.market.value = market; state.market = market;
-      populateSymbolSelect();
-      updateExchangeField();
-      el.custom.value = symbol;
-      if ([...el.symbol.options].some(o => o.value === symbol)) el.symbol.value = symbol;
-      loadAnalysis();
+      goToSymbol(market, symbol);
     };
     row.addEventListener("click", go);
     row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(e); } });
@@ -861,113 +1083,192 @@ async function removeWatch(market, symbol) {
 
 /* ══════════════════ 종목 추가 모달 ══════════════════ */
 const PICKER_MARKET_LABEL = { crypto: "코인", kr: "국내주식", us: "해외주식" };
-state.pickerMarket = "crypto";
+state.pickerMarket = "all";
+state.pickerIndex = 0;
 
-function openPicker() {
+function openPicker(prefill) {
   $("pickerModal").classList.remove("hidden");
   $("pickerError").textContent = "";
-  $("pickerSearch").value = "";
+  $("pickerSearch").value = prefill || "";
+  state.pickerIndex = 0;
   renderPicker();
   $("pickerSearch").focus();
+  $("pickerSearch").select();
 }
 function closePicker() { $("pickerModal").classList.add("hidden"); }
 
+/* 검색 결과 — '전체' 탭이면 세 시장을 한꺼번에 훑는다.
+   보고 싶은 종목이 어느 시장인지 먼저 고르게 하는 건 사용자에게 떠넘기는 일이다. */
 function pickerCandidates() {
-  const list = (window.__markets || {})[state.pickerMarket] || [];
+  const markets = state.pickerMarket === "all"
+    ? ["crypto", "kr", "us"] : [state.pickerMarket];
   const q = $("pickerSearch").value.trim().toLowerCase();
-  if (!q) return list;
-  return list.filter(p => {
-    const hay = [p.symbol, p.name, ...(p.aliases || [])].join(" ").toLowerCase();
-    return hay.includes(q);
-  });
+  const out = [];
+  for (const m of markets) {
+    for (const p of (window.__markets || {})[m] || []) {
+      if (!q) { out.push({ ...p, market: m }); continue; }
+      const hay = [p.symbol, p.name, ...(p.aliases || [])].join(" ").toLowerCase();
+      if (hay.includes(q)) out.push({ ...p, market: m, exact: p.symbol.toLowerCase() === q });
+    }
+  }
+  // 티커가 정확히 일치하면 맨 위로
+  out.sort((a, b) => (b.exact ? 1 : 0) - (a.exact ? 1 : 0));
+  return out.slice(0, 60);
+}
+
+/* 목록에 없는 티커도 바로 열어볼 수 있게 후보를 하나 만들어 준다.
+   단, 티커처럼 생겼을 때만 — "엔비디아"를 쳤는데 "엔비디아USDT"를 권하면 안 된다. */
+function directCandidate() {
+  const raw = $("pickerSearch").value.trim();
+  if (!raw) return null;
+  const rows = pickerCandidates();
+  if (rows.some(r => r.symbol.toLowerCase() === raw.toLowerCase())) return null;
+
+  if (/^\d{6}$/.test(raw)) {                       // 국내주식 종목코드
+    return { symbol: raw, name: "직접 입력한 종목코드", market: "kr", direct: true };
+  }
+  if (!/^[A-Za-z][A-Za-z0-9.\-]{0,11}$/.test(raw)) return null;   // 영문 티커가 아니면 권하지 않는다
+
+  const m = state.pickerMarket === "all" ? "crypto" : state.pickerMarket;
+  if (m === "kr") return null;
+  let symbol = raw.toUpperCase();
+  if (m === "crypto" && !symbol.endsWith("USDT")) symbol += "USDT";
+  return { symbol, name: "직접 입력한 티커", market: m, direct: true };
+}
+
+function pickerRows() {
+  const rows = pickerCandidates();
+  const d = directCandidate();
+  return d ? [...rows, d] : rows;
 }
 
 function renderPicker() {
-  const market = state.pickerMarket;
-  const rows = pickerCandidates();
+  const rows = pickerRows();
   const box = $("pickerResults");
   if (!rows.length) {
-    box.innerHTML = `<p class="empty-msg">검색 결과가 없습니다.<br>아래에서 티커를 직접 입력해 추가할 수 있습니다.</p>`;
+    box.innerHTML = `<p class="empty-msg">검색 결과가 없습니다.<br>
+      국내주식은 6자리 종목코드(예: 005930), 해외주식은 티커(예: NVDA),
+      코인은 심볼(예: PEPEUSDT)로 입력해보세요.</p>`;
     return;
   }
-  box.innerHTML = rows.map(p => {
-    const on = isWatched(market, p.symbol);
-    return `<button class="picker-row ${on ? "added" : ""}" data-symbol="${p.symbol}">
+  if (state.pickerIndex >= rows.length) state.pickerIndex = rows.length - 1;
+  if (state.pickerIndex < 0) state.pickerIndex = 0;
+
+  box.innerHTML = rows.map((p, i) => {
+    const on = isWatched(p.market, p.symbol);
+    return `<div class="picker-row ${i === state.pickerIndex ? "cursor" : ""}"
+                 data-i="${i}" role="option" aria-selected="${i === state.pickerIndex}">
+      <span class="pr-mk">${MARKET_LABEL[p.market] || p.market}</span>
       <span class="pr-meta">
         <span class="pr-name">${p.name}</span>
         <span class="pr-sym">${p.symbol}${p.aliases && p.aliases.length ? " · " + p.aliases[0] : ""}</span>
       </span>
-      <span class="pr-action">${on ? "담김 ✓" : "＋ 담기"}</span>
-    </button>`;
+      <button class="pr-star ${on ? "on" : ""}" data-star="${i}"
+              title="${on ? "관심종목에서 빼기" : "관심종목에 담기"}"
+              aria-label="${on ? "관심종목에서 빼기" : "관심종목에 담기"}">${on ? "★" : "☆"}</button>
+      <span class="pr-go">보러가기 ›</span>
+    </div>`;
   }).join("");
 
   box.querySelectorAll(".picker-row").forEach(row => {
-    row.addEventListener("click", async () => {
-      const symbol = row.dataset.symbol;
-      if (isWatched(market, symbol)) {
-        await removeWatch(market, symbol);
-        toast(`${symbol} 을(를) 관심종목에서 뺐습니다.`);
-      } else {
-        await addWatch(market, symbol);
-        toast(`${symbol} 을(를) 관심종목에 담았습니다.`);
-      }
-      renderPicker();
+    row.addEventListener("click", (e) => {
+      if (e.target.closest(".pr-star")) return;
+      choosePicker(Number(row.dataset.i));
+    });
+    row.addEventListener("mousemove", () => {
+      const i = Number(row.dataset.i);
+      if (state.pickerIndex !== i) { state.pickerIndex = i; renderPicker(); }
     });
   });
+  box.querySelectorAll(".pr-star").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await toggleWatch(Number(btn.dataset.star));
+    });
+  });
+  box.querySelector(".picker-row.cursor")?.scrollIntoView({ block: "nearest" });
 }
 
-$("openPickerBtn").addEventListener("click", openPicker);
+/* 종목 하나를 놓고 보는 화면들 — 여기서 종목을 바꾸면 그 화면에 머물러야 한다 */
+const SYMBOL_VIEWS = ["overview", "ledger", "backtest"];
+
+/* Enter — 그 종목을 바로 열어준다.
+   신호 장부를 보다가 종목을 골랐는데 개요로 튕겨 나가면, 보던 것을 다시
+   찾아 들어가야 한다. 종목 화면에 있었다면 그 화면에 그대로 둔다. */
+function choosePicker(i) {
+  const rows = pickerRows();
+  const p = rows[i];
+  if (!p) return;
+  closePicker();
+  const stay = SYMBOL_VIEWS.includes(state.activeView);
+  goToSymbol(p.market, p.symbol, stay ? {} : { view: "overview" });
+}
+
+/* Ctrl+Enter 또는 ★ — 관심종목에 담고 팔레트는 열어둔다 */
+async function toggleWatch(i) {
+  const rows = pickerRows();
+  const p = rows[i];
+  if (!p) return;
+  const err = $("pickerError");
+  err.textContent = "";
+
+  // 직접 입력한 티커는 오타일 수 있다. 담아두면 나중에 눌렀을 때 데모 데이터가
+  // 떠서 혼란스러우므로, 실제로 시세가 오는 종목인지 먼저 확인한다.
+  if (p.direct && !isWatched(p.market, p.symbol)) {
+    err.textContent = "확인 중…";
+    try {
+      const probe = await api(`/candles?market=${p.market}&symbol=${encodeURIComponent(p.symbol)}&interval=1d&limit=60`);
+      if (probe.source === "demo") {
+        err.textContent = `${p.symbol} 의 시세를 가져오지 못했습니다. 티커를 확인해주세요.`;
+        return;
+      }
+    } catch (e) {
+      err.textContent = e.message;
+      return;
+    }
+    err.textContent = "";
+  }
+
+  if (isWatched(p.market, p.symbol)) {
+    await removeWatch(p.market, p.symbol);
+    toast(`${p.symbol} 을(를) 관심종목에서 뺐습니다.`);
+  } else {
+    await addWatch(p.market, p.symbol);
+    toast(`${p.symbol} 을(를) 관심종목에 담았습니다.`);
+  }
+  renderPicker();
+}
+
+$("pickerSearch").addEventListener("keydown", (e) => {
+  const rows = pickerRows();
+  if (e.key === "ArrowDown") { e.preventDefault(); state.pickerIndex = Math.min(state.pickerIndex + 1, rows.length - 1); renderPicker(); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); state.pickerIndex = Math.max(state.pickerIndex - 1, 0); renderPicker(); }
+  else if (e.key === "Enter") {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) toggleWatch(state.pickerIndex);
+    else choosePicker(state.pickerIndex);
+  }
+  else if (e.key === "Escape") { e.preventDefault(); closePicker(); }
+});
+
+$("openPickerBtn").addEventListener("click", () => openPicker());
+$("symbolBtn").addEventListener("click", () => openPicker());
+$("openPaletteFromSettings").addEventListener("click", () => openPicker());
 $("closePickerBtn").addEventListener("click", closePicker);
 $("pickerModal").addEventListener("click", (e) => { if (e.target === $("pickerModal")) closePicker(); });
-$("pickerSearch").addEventListener("input", renderPicker);
+$("pickerSearch").addEventListener("input", () => { state.pickerIndex = 0; renderPicker(); });
 
 document.querySelectorAll("#pickerTabs .tab").forEach(btn => {
   btn.addEventListener("click", () => {
     state.pickerMarket = btn.dataset.pmarket;
     document.querySelectorAll("#pickerTabs .tab").forEach(b => b.classList.toggle("active", b === btn));
     $("pickerError").textContent = "";
+    state.pickerIndex = 0;
     renderPicker();
+    $("pickerSearch").focus();
   });
 });
 
-/* 목록에 없는 종목을 티커로 직접 추가 */
-async function addDirectSymbol() {
-  const raw = $("directSymbol").value.trim();
-  const err = $("pickerError");
-  err.textContent = "";
-  if (!raw) { err.textContent = "티커를 입력하세요."; return; }
-
-  const market = state.pickerMarket;
-  let symbol = market === "kr" ? raw : raw.toUpperCase();
-  if (market === "crypto" && !symbol.endsWith("USDT")) symbol += "USDT";
-  if (market === "kr" && !/^\d{6}$/.test(symbol)) {
-    err.textContent = "국내주식은 6자리 종목코드로 입력하세요 (예: 005930).";
-    return;
-  }
-  if (isWatched(market, symbol)) { err.textContent = "이미 관심종목에 있습니다."; return; }
-
-  // 실제로 데이터를 받아올 수 있는 종목인지 먼저 확인한다 — 오타를 담아두면
-  // 나중에 눌렀을 때 데모 데이터가 떠서 혼란스럽기 때문.
-  const btn = $("directAddBtn");
-  btn.disabled = true; btn.textContent = "확인 중…";
-  try {
-    const probe = await api(`/candles?market=${market}&symbol=${encodeURIComponent(symbol)}&interval=1d&limit=60`);
-    if (probe.source === "demo") {
-      err.textContent = `${symbol} 의 시세를 가져오지 못했습니다. 티커를 확인해주세요.`;
-      return;
-    }
-    await addWatch(market, symbol);
-    $("directSymbol").value = "";
-    renderPicker();
-    toast(`${symbol} 을(를) 관심종목에 담았습니다.`);
-  } catch (e) {
-    err.textContent = e.message;
-  } finally {
-    btn.disabled = false; btn.textContent = "추가";
-  }
-}
-$("directAddBtn").addEventListener("click", addDirectSymbol);
-$("directSymbol").addEventListener("keydown", (e) => { if (e.key === "Enter") addDirectSymbol(); });
 
 function renderPatternList() {
   const d = state.data;
@@ -1024,7 +1325,7 @@ function switchView(name) {
   state.activeView = name;
   document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.view === name));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.dataset.view === name));
-  $("ledgerSymbol").textContent = state.symbol;
+  syncSymbolLabels();
   if (state.data) requestAnimationFrame(renderAll);
 }
 document.querySelectorAll("[data-view]").forEach(btn => {
@@ -1051,13 +1352,52 @@ document.querySelectorAll("#patternTabs .tab").forEach(btn => {
 
 document.querySelectorAll("#tfSegmented button").forEach(btn => {
   btn.addEventListener("click", () => {
+    if (state.interval === btn.dataset.tf) return;
     state.interval = btn.dataset.tf;
-    el.interval.value = state.interval;
-    document.querySelectorAll("#tfSegmented button").forEach(b => b.classList.toggle("active", b === btn));
+    syncSegmented();
+    invalidateBacktest();
     loadAnalysis();
   });
 });
 $("refreshBtn").addEventListener("click", () => loadAnalysis());
+
+/* ── 키보드 ──────────────────────────────────────────────────
+   마우스로만 쓸 수 있는 화면은 자주 쓸수록 불편해진다.
+   입력 중일 때는 가로채지 않는다. */
+const VIEW_KEYS = ["overview", "ledger", "screener", "backtest", "alerts", "portfolio", "patternlab", "settings"];
+
+document.addEventListener("keydown", (e) => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
+
+  // Ctrl/⌘+K — 어디서든 종목 검색
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    $("pickerModal").classList.contains("hidden") ? openPicker() : closePicker();
+    return;
+  }
+  if (e.key === "Escape") {
+    if (!$("pickerModal").classList.contains("hidden")) { closePicker(); return; }
+    if (!$("builderModal").classList.contains("hidden")) { closeBuilder(); return; }
+    if (!$("shortcutHelp").classList.contains("hidden")) { $("shortcutHelp").classList.add("hidden"); return; }
+  }
+  if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+
+  // 숫자 — 화면 전환
+  const n = Number(e.key);
+  if (n >= 1 && n <= VIEW_KEYS.length) {
+    const target = VIEW_KEYS[n - 1];
+    if (document.querySelector(`.view[data-view="${target}"]`)) { e.preventDefault(); switchView(target); }
+    return;
+  }
+  if (e.key === "r" || e.key === "R") { e.preventDefault(); loadAnalysis(); return; }
+  if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+    e.preventDefault(); $("shortcutHelp").classList.toggle("hidden");
+  }
+});
+$("shortcutHelp").addEventListener("click", (e) => {
+  if (e.target === $("shortcutHelp") || e.target.closest("[data-close]")) $("shortcutHelp").classList.add("hidden");
+});
+$("helpBtn").addEventListener("click", () => $("shortcutHelp").classList.toggle("hidden"));
 
 /* ══════════════════ 차트 인터랙션 ══════════════════ */
 const mx = (e, c) => e.clientX - c.getBoundingClientRect().left;
@@ -1292,9 +1632,9 @@ $("saveShapeBtn").addEventListener("click", async () => {
 /* ══════════════════ 설정 컨트롤 ══════════════════ */
 el.market.addEventListener("change", () => {
   state.market = el.market.value;
-  populateSymbolSelect();
+  state.symbol = defaultSymbol(state.market);
   updateExchangeField();
-  el.custom.value = "";
+  syncSymbolButton();
 });
 
 el.exchange.addEventListener("change", () => {
@@ -1302,13 +1642,7 @@ el.exchange.addEventListener("change", () => {
   localStorage.setItem("sl.exchange", state.exchange);
   if (state.data && state.market === "crypto") loadAnalysis();
 });
-el.loadBtn.addEventListener("click", () => {
-  state.symbol = el.symbol.value;
-  state.interval = el.interval.value;
-  syncSegmented();
-  loadAnalysis();
-});
-el.interval.addEventListener("change", () => { state.interval = el.interval.value; syncSegmented(); });
+
 function syncSegmented() {
   document.querySelectorAll("#tfSegmented button").forEach(b => b.classList.toggle("active", b.dataset.tf === state.interval));
 }
@@ -1327,6 +1661,8 @@ window.addEventListener("resize", () => {
   resizeTimer = setTimeout(() => { if (state.data) renderAll(); }, 120);
 });
 
+let canvasObserver = null;
+
 /* 캔버스는 카드 높이에 따라 늘어나므로, 실제 크기가 바뀔 때마다 다시 그린다.
    (비트맵만 늘어나 그림이 찌그러지는 것을 막는다) */
 if (window.ResizeObserver) {
@@ -1343,14 +1679,340 @@ if (window.ResizeObserver) {
       (redraw[canvas.dataset.redraw] || (() => {}))();
     }
   });
+  redraw.equity = () => drawEquity(state.btEquity);
   el.evidence.dataset.redraw = "evidence";
   el.chart.dataset.redraw = "chart";
   ro.observe(el.evidence);
   ro.observe(el.chart);
+  canvasObserver = ro;
 }
+
+/* ══════════════════ 스크리너 ══════════════════ */
+const SIGNAL_TEXT = {
+  strong_buy: ["적극 매수", "bull"], normal_buy: ["매수 우위", "bull"],
+  strong_sell: ["적극 매도", "bear"], normal_sell: ["매도 우위", "bear"],
+  sideways: ["횡보", ""], monitor: ["관망", ""],
+};
+const MK = { crypto: "코인", us: "해외", kr: "국내" };
+
+function fmtNum(v, cur) {
+  if (v == null) return "—";
+  const a = Math.abs(v);
+  if (cur === "KRW") return v.toLocaleString("ko-KR", { maximumFractionDigits: a >= 100 ? 0 : 2 });
+  return v.toLocaleString("ko-KR", { maximumFractionDigits: a >= 1000 ? 2 : a >= 1 ? 3 : 6 });
+}
+function signed(v) {
+  if (v == null) return "—";
+  return `<span class="${v >= 0 ? "up" : "dn"}">${v >= 0 ? "+" : "-"}${Math.abs(v).toFixed(2)}%</span>`;
+}
+
+async function runScreener() {
+  const btn = $("scrRunBtn");
+  btn.disabled = true; btn.textContent = "스캔 중…";
+  $("scrCount").textContent = "훑는 중…";
+  $("scrTable").innerHTML = "";
+  $("scrSkipped").innerHTML = "";
+  try {
+    const p = state.params;
+    const qs = `scope=${$("scrScope").value}&interval=${$("scrInterval").value}` +
+               `&direction=${$("scrDirection").value}&min_score=${$("scrMinScore").value}` +
+               `&exchange=${encodeURIComponent(state.exchange)}` +
+               `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}`;
+    const res = await api(`/screener?${qs}`);
+    renderScreener(res);
+  } catch (e) {
+    $("scrCount").textContent = "스캔 실패";
+    $("scrSkipped").innerHTML = `<div class="skip-note">${e.message}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = "스캔 실행";
+  }
+}
+
+function renderScreener(res) {
+  $("scrMeta").textContent = `${res.scanned}종목 · ${(res.elapsed_ms / 1000).toFixed(1)}초`;
+  $("scrCount").textContent = res.rows.length ? `${res.rows.length}종목` : "조건에 맞는 종목 없음";
+
+  if (!res.rows.length) {
+    $("scrTable").innerHTML = "";
+    $("scrTable").insertAdjacentHTML("afterend", "");
+    $("scrSkipped").innerHTML = `<div class="empty-state">조건을 만족하는 종목이 없습니다.<br>최소 점수를 낮추거나 범위를 넓혀보세요.</div>`;
+  } else {
+    $("scrTable").className = "data";
+    $("scrTable").innerHTML = `
+      <thead><tr>
+        <th>종목</th><th class="num">현재가</th><th class="num">등락</th>
+        <th class="num">매수</th><th class="num">매도</th>
+        <th class="num">RSI</th><th class="num">ADX</th><th>판정</th><th></th>
+      </tr></thead>
+      <tbody>${res.rows.map(r => {
+        const [label, tone] = SIGNAL_TEXT[r.signal] || ["—", ""];
+        return `<tr data-market="${r.market}" data-symbol="${r.symbol}">
+          <td><span class="sym">${r.symbol}</span>
+            <span class="mk">${MK[r.market] || r.market} · ${symbolDisplayName(r.market, r.symbol)}${r.whale ? " · 고래" : ""}</span></td>
+          <td class="num">${fmtNum(r.price, r.currency)}</td>
+          <td class="num">${signed(r.change_pct)}</td>
+          <td class="num score-cell" style="color:var(--bull)">${r.buy_score}</td>
+          <td class="num score-cell" style="color:var(--bear)">${r.sell_score}</td>
+          <td class="num">${r.rsi}</td>
+          <td class="num">${r.adx}${r.strong_trend ? " 🔥" : ""}</td>
+          <td><span class="regime-pill ${tone}">${label}</span></td>
+          <td><button class="row-act" data-bt="${r.market}|${r.symbol}" title="${r.symbol} 백테스트">백테스트 ›</button></td>
+        </tr>`;
+      }).join("")}</tbody>`;
+
+    // 행을 누르면 그 종목으로 전환
+    $("scrTable").querySelectorAll("tbody tr").forEach(tr => {
+      tr.addEventListener("click", (e) => {
+        if (e.target.closest(".row-act")) return;
+        const { market, symbol } = tr.dataset;
+        goToSymbol(market, symbol, { interval: $("scrInterval").value, view: "overview" });
+      });
+    });
+    // 차트로 갔다가 다시 돌아오는 수고 없이 바로 검증할 수 있게 한다
+    $("scrTable").querySelectorAll(".row-act").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const [market, symbol] = btn.dataset.bt.split("|");
+        goToSymbol(market, symbol, { interval: $("scrInterval").value, view: "backtest" });
+        runBacktest();
+      });
+    });
+
+    if (res.skipped.length) {
+      $("scrSkipped").innerHTML = `<div class="skip-note">${res.note} —
+        ${res.skipped.slice(0, 6).map(s => s.symbol).join(", ")}${res.skipped.length > 6 ? " 외" : ""}</div>`;
+    }
+  }
+}
+$("scrRunBtn").addEventListener("click", runScreener);
+
+/* ══════════════════ 백테스트 ══════════════════ */
+async function runBacktest() {
+  const btn = $("btRunBtn");
+  btn.disabled = true; btn.textContent = "계산 중…";
+  $("btResult").innerHTML = `<div class="card"><div class="empty-state">과거 데이터로 계산하고 있습니다…</div></div>`;
+  try {
+    const p = state.params;
+    const qs = `market=${state.market}&symbol=${encodeURIComponent(state.symbol)}` +
+               `&interval=${state.interval}&exchange=${encodeURIComponent(state.exchange)}` +
+               `&min_score=${$("btMinScore").value}&max_bars=${$("btMaxBars").value}` +
+               `&fee_pct=${$("btFee").value}` +
+               `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}`;
+    const res = await api(`/backtest?${qs}`);
+    renderBacktest(res);
+  } catch (e) {
+    $("btResult").innerHTML = `<div class="card"><div class="skip-note">${e.message}</div></div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = "백테스트 실행";
+  }
+}
+
+function renderBacktest(res) {
+  $("btSymbol").textContent = `${res.symbol} · ${TF_LABEL[res.interval] || res.interval}`;
+  $("btMeta").textContent = `${res.candles}봉 · ${SOURCE_LABEL[res.source] || res.source}`;
+  const s = res.summary;
+
+  state.btFor = { symbol: res.symbol, interval: res.interval };
+  if (!s.count) {
+    $("btResult").innerHTML = `<div class="card"><div class="empty-state">${res.note || "거래가 발생하지 않았습니다."}</div></div>`;
+    return;
+  }
+
+  const tiles = [
+    ["승률", `${s.win_rate}%`, `${s.wins}승 ${s.losses}패`, s.win_rate >= 50 ? "bull" : "bear"],
+    ["평균 손익비", s.payoff, `평균이익 ${s.avg_win}% / 손실 ${s.avg_loss}%`, s.payoff >= 1 ? "bull" : "bear"],
+    ["최대 낙폭", `${s.mdd}%`, "MDD", "bear"],
+    ["총 수익률", `${s.total_return >= 0 ? "+" : ""}${s.total_return}%`, `${s.count}거래 · 수수료 반영`,
+      s.total_return >= 0 ? "bull" : "bear"],
+  ];
+
+  $("btResult").innerHTML = `
+    <div class="tile-row">${tiles.map(([l, v, n, tone]) => `
+      <div class="tile" style="--tile-tone:var(--${tone})">
+        <div><p class="tile-label">${l}</p><p class="tile-value">${v}</p></div>
+        <p class="tile-note">${n}</p>
+      </div>`).join("")}</div>
+
+    <div class="overview-grid">
+      <article class="card equity-card">
+        <header class="card-head"><div>
+          <p class="eyebrow">EQUITY CURVE</p><h2>누적 수익 곡선</h2>
+          <p class="card-sub">100에서 시작해 거래마다 복리로 누적한 값입니다.</p></div>
+          <span class="regime-pill ${s.total_return >= 0 ? "bull" : "bear"}">${s.total_return >= 0 ? "+" : ""}${s.total_return}%</span>
+        </header>
+        <div class="equity-plot"><canvas id="equityCanvas"></canvas></div>
+      </article>
+
+      <div class="overview-side">
+        <article class="card">
+          <header class="card-head"><div>
+            <p class="eyebrow">점수대별 성적</p><h2>점수가 맞는가</h2></div></header>
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>점수</th><th class="num">거래</th><th class="num">승률</th><th class="num">평균</th></tr></thead>
+            <tbody>${res.by_score.map(b => `
+              <tr><td><b>${b.label}</b></td><td class="num">${b.count}</td>
+                <td class="num">${b.win_rate}%</td>
+                <td class="num ${b.avg_pnl >= 0 ? "up" : "dn"}">${b.avg_pnl >= 0 ? "+" : ""}${b.avg_pnl}%</td></tr>`).join("")}
+            </tbody></table></div>
+          ${res.verdict ? `<div class="verdict-line">${res.verdict}</div>` : ""}
+        </article>
+
+        <article class="card">
+          <header class="card-head"><div><p class="eyebrow">최근 거래</p><h2>${Math.min(res.trades.length, 12)}건</h2></div></header>
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>진입</th><th>방향</th><th class="num">점수</th><th>청산</th><th class="num">손익</th></tr></thead>
+            <tbody>${res.trades.slice(-12).reverse().map(t => `
+              <tr><td class="mono" style="font-size:11px">${fmtTime(t.entry_time, res.interval)}</td>
+                <td><span class="regime-pill ${t.direction === "buy" ? "bull" : "bear"}">${t.direction === "buy" ? "매수" : "매도"}</span></td>
+                <td class="num">${t.score}</td>
+                <td class="trade-row-${t.exit_reason}">${{ tp: "익절", sl: "손절", timeout: "시간종료" }[t.exit_reason]}</td>
+                <td class="num ${t.pnl_pct >= 0 ? "up" : "dn"}">${t.pnl_pct >= 0 ? "+" : ""}${t.pnl_pct}%</td></tr>`).join("")}
+            </tbody></table></div>
+        </article>
+      </div>
+    </div>
+
+    <div class="card"><p class="fine">
+      진입은 신호가 뜬 봉의 종가, 청산은 TP·SL 중 먼저 닿는 쪽입니다.
+      한 봉 안에서 둘 다 닿는 경우 봉 내부 순서를 알 수 없으므로 불리한 쪽(손절)으로 처리했습니다 —
+      결과가 실제보다 좋아 보이지 않게 하기 위해서입니다.
+      과거 성과가 미래를 보장하지 않으며, 실제 체결가와는 차이가 납니다.
+    </p></div>`;
+
+  state.btEquity = res.equity;
+  state.btFor = { symbol: res.symbol, interval: res.interval };
+  requestAnimationFrame(() => {
+    drawEquity(res.equity);
+    // 카드가 옆 칼럼 높이에 맞춰 늘어나므로, 새로 만든 캔버스도 관찰 대상에 넣는다
+    const canvas = $("equityCanvas");
+    if (canvas && canvasObserver) {
+      canvas.dataset.redraw = "equity";
+      canvasObserver.observe(canvas);
+    }
+  });
+}
+
+function drawEquity(points) {
+  const canvas = $("equityCanvas");
+  if (!canvas || !points || points.length < 2) return;
+  fitCanvas(canvas);
+  const cx = canvas.getContext("2d");
+  paint(cx, canvas, () => {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const m = { t: 14, r: 58, b: 22, l: 8 };
+    const vals = points.map(p => p.value);
+    const lo = Math.min(100, ...vals), hi = Math.max(100, ...vals);
+    const pad = (hi - lo) * 0.12 || 1;
+    const LO = lo - pad, HI = hi + pad;
+    const X = i => m.l + (i / (points.length - 1)) * (w - m.l - m.r);
+    const Y = v => m.t + (1 - (v - LO) / (HI - LO || 1)) * (h - m.t - m.b);
+
+    cx.font = "10px 'IBM Plex Mono', monospace";
+    for (let g = 0; g <= 4; g++) {
+      const v = LO + (HI - LO) * (g / 4), y = Y(v);
+      cx.strokeStyle = C.gridLine; cx.lineWidth = 1; cx.setLineDash([2, 4]);
+      cx.beginPath(); cx.moveTo(m.l, y); cx.lineTo(w - m.r, y); cx.stroke();
+      cx.setLineDash([]);
+      cx.fillStyle = C.ink3; cx.fillText(v.toFixed(1), w - m.r + 8, y + 3);
+    }
+    // 원금(100) 기준선 — 이 위면 벌었고 아래면 잃었다
+    cx.strokeStyle = C.ink3; cx.lineWidth = 1; cx.setLineDash([4, 3]);
+    cx.beginPath(); cx.moveTo(m.l, Y(100)); cx.lineTo(w - m.r, Y(100)); cx.stroke();
+    cx.setLineDash([]);
+
+    const last = points[points.length - 1].value;
+    const col = last >= 100 ? C.bull : C.bear;
+    cx.beginPath();
+    points.forEach((p, i) => { const x = X(i), y = Y(p.value); i ? cx.lineTo(x, y) : cx.moveTo(x, y); });
+    cx.lineTo(X(points.length - 1), Y(LO)); cx.lineTo(X(0), Y(LO)); cx.closePath();
+    const g = cx.createLinearGradient(0, m.t, 0, h - m.b);
+    g.addColorStop(0, hexA(col, 0.28)); g.addColorStop(1, hexA(col, 0));
+    cx.fillStyle = g; cx.fill();
+
+    cx.strokeStyle = col; cx.lineWidth = 2; cx.lineJoin = "round"; cx.beginPath();
+    points.forEach((p, i) => { const x = X(i), y = Y(p.value); i ? cx.lineTo(x, y) : cx.moveTo(x, y); });
+    cx.stroke();
+    cx.fillStyle = col;
+    cx.beginPath(); cx.arc(X(points.length - 1), Y(last), 3.5, 0, Math.PI * 2); cx.fill();
+  });
+}
+$("btRunBtn").addEventListener("click", runBacktest);
+
+/* ══════════════════ 테마 · 밀도 · 지표 파라미터 ══════════════════ */
+function applyTheme(theme) {
+  state.theme = theme;
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("ss.theme", theme);
+  const sel = $("themeSelect"); if (sel) sel.value = theme;
+  // 토큰이 바뀌었으니 캔버스 색을 다시 읽고 그린다
+  syncChartColors();
+  if (state.data) renderAll();
+}
+
+function applyDensity(density) {
+  state.density = density;
+  document.documentElement.setAttribute("data-density", density);
+  localStorage.setItem("ss.density", density);
+  const sel = $("densitySelect"); if (sel) sel.value = density;
+  // 밀도가 바뀌면 카드 크기가 달라지므로 캔버스를 다시 맞춘다
+  if (state.data) requestAnimationFrame(renderAll);
+}
+
+$("themeBtn").addEventListener("click", () => applyTheme(state.theme === "dark" ? "light" : "dark"));
+$("themeSelect").addEventListener("change", (e) => applyTheme(e.target.value));
+$("densitySelect").addEventListener("change", (e) => applyDensity(e.target.value));
+
+function fillParamInputs() {
+  $("paramVolLen").value = state.params.vol_len;
+  $("paramFibLen").value = state.params.fib_len;
+  $("paramAdxThr").value = state.params.adx_thr;
+}
+
+function readParamInputs() {
+  const raw = {
+    vol_len: Number($("paramVolLen").value),
+    fib_len: Number($("paramFibLen").value),
+    adx_thr: Number($("paramAdxThr").value),
+  };
+  for (const [k, r] of Object.entries(PARAM_RANGE)) {
+    if (!Number.isFinite(raw[k])) return { error: `${r.label}에 숫자를 입력하세요.` };
+    if (raw[k] < r.min || raw[k] > r.max) {
+      return { error: `${r.label}은 ${r.min} 이상 ${r.max} 이하여야 합니다.` };
+    }
+  }
+  return { params: raw };
+}
+
+$("paramApplyBtn").addEventListener("click", async () => {
+  const err = $("paramError");
+  err.textContent = "";
+  const { params, error } = readParamInputs();
+  if (error) { err.textContent = error; return; }
+  state.params = params;
+  localStorage.setItem("ss.params", JSON.stringify(params));
+  await loadAnalysis();
+  toast("지표 파라미터를 적용했습니다.");
+});
+
+$("paramResetBtn").addEventListener("click", async () => {
+  state.params = { ...DEFAULT_PARAMS };
+  localStorage.removeItem("ss.params");
+  fillParamInputs();
+  $("paramError").textContent = "";
+  await loadAnalysis();
+  toast("기본값으로 되돌렸습니다.");
+});
 
 /* ══════════════════ 시작 ══════════════════ */
 (async function init() {
+  // 색·간격 토큰을 먼저 확정한 뒤에 캔버스를 그린다
+  document.documentElement.setAttribute("data-theme", state.theme);
+  document.documentElement.setAttribute("data-density", state.density);
+  syncChartColors();
+  fillParamInputs();
+  $("themeSelect").value = state.theme;
+  $("densitySelect").value = state.density;
+
   addCandleRule(0);
   updateLayerSummary();
   try {
