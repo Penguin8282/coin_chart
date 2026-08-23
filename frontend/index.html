@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>시그널 레저</title>
+<title>SmartSignal</title>
 <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>" />
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -23,7 +23,7 @@
         <rect x="20" y="7"  width="6" height="23" rx="1.5"/>
         <path d="M3 14 L13 8 L22 11 L30 2" fill="none" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
-      <div class="brand-text"><span>SIGNAL</span><strong>LEDGER</strong></div>
+      <div class="brand-text"><span>SMART</span><strong>SIGNAL</strong></div>
     </div>
 
     <nav id="nav">
@@ -78,6 +78,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
         <span id="updatedAt">—</span>
       </div>
+      <button id="themeBtn" class="icon-btn" title="라이트/다크 전환" aria-label="테마 전환">
+        <svg class="icon-dark" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13.5A8 8 0 1 1 10.5 4a6.5 6.5 0 0 0 9.5 9.5z"/></svg>
+        <svg class="icon-light" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.2 5.2l1.4 1.4M17.4 17.4l1.4 1.4M18.8 5.2l-1.4 1.4M6.6 17.4l-1.4 1.4"/></svg>
+      </button>
       <button id="refreshBtn" class="icon-btn" title="새로고침">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-.6 4M20 5v6h-6"/></svg>
       </button>
@@ -324,6 +328,53 @@
               <label class="switch"><input type="checkbox" id="tgRf"><span class="track"></span><span class="switch-label"><i style="background:var(--s-rf)"></i>Range Filter</span></label>
               <label class="switch"><input type="checkbox" id="tgFbb"><span class="track"></span><span class="switch-label"><i style="background:var(--s-fbb)"></i>Fibonacci BB</span></label>
             </div>
+          </article>
+
+          <article class="card">
+            <header class="card-head"><div>
+              <p class="eyebrow">화면</p>
+              <h2>어떻게 보일지</h2>
+            </div></header>
+            <div class="field">
+              <label for="themeSelect">테마</label>
+              <select id="themeSelect">
+                <option value="dark">다크</option>
+                <option value="light">라이트</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="densitySelect">정보 밀도 <span class="field-hint">한 화면에 얼마나 담을지</span></label>
+              <select id="densitySelect">
+                <option value="compact">컴팩트</option>
+                <option value="normal">기본</option>
+                <option value="pro">프로 (최대 밀도)</option>
+              </select>
+            </div>
+          </article>
+
+          <article class="card">
+            <header class="card-head"><div>
+              <p class="eyebrow">지표 파라미터</p>
+              <h2>어떻게 계산할지</h2>
+            </div></header>
+            <p class="card-sub">신호 점수 계산에 쓰이는 값입니다. 바꾸면 22점 스코어와 탐지 결과가 함께 달라집니다.</p>
+            <div class="param-row">
+              <label for="paramVolLen">거래량 MA 기간</label>
+              <input id="paramVolLen" type="number" min="5" max="200" step="1" value="20" />
+            </div>
+            <div class="param-row">
+              <label for="paramFibLen">피보나치 기간</label>
+              <input id="paramFibLen" type="number" min="20" max="500" step="1" value="100" />
+            </div>
+            <div class="param-row">
+              <label for="paramAdxThr">ADX 추세 기준</label>
+              <input id="paramAdxThr" type="number" min="10" max="60" step="0.5" value="25" />
+            </div>
+            <div class="param-actions">
+              <button id="paramResetBtn" class="ghost-btn">기본값으로</button>
+              <button id="paramApplyBtn" class="primary-btn">적용</button>
+            </div>
+            <div id="paramError" class="error"></div>
           </article>
 
           <article class="card">

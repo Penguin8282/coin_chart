@@ -3,20 +3,62 @@
 
 const API = "/api";
 
-/* 검증된 시리즈 팔레트 (dataviz validate_palette.js, dark surface #0E1519 전 항목 통과).
-   민트 계열은 UI 크롬 전용이라 시리즈에 쓰지 않는다. */
+/* ── 화면 설정(테마·밀도·지표 파라미터) ─────────────────────────────
+   전부 브라우저에 저장한다. 지표 파라미터는 22점 스코어 계산에 직접
+   들어가므로, 값이 바뀌면 반드시 서버에 다시 물어봐야 한다. */
+const DEFAULT_PARAMS = { vol_len: 20, fib_len: 100, adx_thr: 25 };
+const PARAM_RANGE = {
+  vol_len: { min: 5, max: 200, label: "거래량 MA 기간" },
+  fib_len: { min: 20, max: 500, label: "피보나치 기간" },
+  adx_thr: { min: 10, max: 60, label: "ADX 추세 기준" },
+};
+
+function loadParams() {
+  try {
+    const saved = JSON.parse(localStorage.getItem("ss.params") || "{}");
+    const out = { ...DEFAULT_PARAMS };
+    for (const k of Object.keys(DEFAULT_PARAMS)) {
+      const v = Number(saved[k]);
+      if (Number.isFinite(v) && v >= PARAM_RANGE[k].min && v <= PARAM_RANGE[k].max) out[k] = v;
+    }
+    return out;
+  } catch { return { ...DEFAULT_PARAMS }; }
+}
+
+/* 캔버스 색은 CSS 토큰에서 읽어온다. 그래야 테마를 바꿨을 때 차트도 같이
+   따라간다 — JS에 색을 박아두면 라이트 테마에서 차트만 어둡게 남는다.
+   (시리즈 색은 dataviz validate_palette.js 로 검증한 값이며 styles.css에 있다) */
 const C = {
-  ink: "#E3EDEB", ink2: "#93A8AC", ink3: "#5F7378",
-  grid: "#16222700", gridLine: "#152128",
+  ink: "#E3EDEB", ink2: "#93A8AC", ink3: "#5F7378", gridLine: "#152128",
   bull: "#2BB98A", bear: "#E5484D", warn: "#E0A32E", accent: "#3EE8B0",
   ema: "#199e70", vwap: "#c98500", rf: "#3987e5",
   band: "#46606B", fib: "#7C8FA6", fbb: "#8E6FB0",
+  surface1: "#0D1519",
 };
+
+const TOKEN_MAP = {
+  ink: "--ink", ink2: "--ink-2", ink3: "--ink-3", gridLine: "--grid",
+  bull: "--bull", bear: "--bear", warn: "--warn", accent: "--accent",
+  ema: "--s-ema", vwap: "--s-vwap", rf: "--s-rf",
+  band: "--s-band", fib: "--s-fib", fbb: "--s-fbb",
+  surface1: "--surface-1",
+};
+
+function syncChartColors() {
+  const cs = getComputedStyle(document.documentElement);
+  for (const [key, token] of Object.entries(TOKEN_MAP)) {
+    const v = cs.getPropertyValue(token).trim();
+    if (v) C[key] = v;
+  }
+}
 
 const state = {
   market: "crypto", symbol: "BTCUSDT", interval: "1h", limit: 500,
   exchange: localStorage.getItem("sl.exchange") || "binance",
   currency: "USD",
+  theme: localStorage.getItem("ss.theme") || "dark",
+  density: localStorage.getItem("ss.density") || "normal",
+  params: loadParams(),
   data: null,
   view: { start: 0, count: 160 },
   toggles: { ema: true, vwap: true, bb: true, fib: true, rf: false, fbb: false,
@@ -154,8 +196,10 @@ async function loadAnalysis() {
   el.loadBtn.disabled = true;
   el.loadBtn.textContent = "불러오는 중…";
   try {
+    const p = state.params;
     const qs = `market=${state.market}&symbol=${encodeURIComponent(sym)}&interval=${state.interval}` +
-               `&limit=${state.limit}&exchange=${encodeURIComponent(state.exchange)}`;
+               `&limit=${state.limit}&exchange=${encodeURIComponent(state.exchange)}` +
+               `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}`;
     const data = await api(`/analysis?${qs}`);
     state.data = data;
     state.symbol = sym;
@@ -493,7 +537,7 @@ function drawEvidence() {
       ectx.beginPath(); ectx.moveTo(x, rect.y0); ectx.lineTo(x, rect.y1); ectx.stroke();
       ectx.restore();
       ectx.fillStyle = C.ink; ectx.beginPath(); ectx.arc(x, y, 4, 0, Math.PI * 2); ectx.fill();
-      ectx.strokeStyle = "#0D1519"; ectx.lineWidth = 2; ectx.stroke();
+      ectx.strokeStyle = C.surface1; ectx.lineWidth = 2; ectx.stroke();
     }
   });
 }
@@ -1349,8 +1393,81 @@ if (window.ResizeObserver) {
   ro.observe(el.chart);
 }
 
+/* ══════════════════ 테마 · 밀도 · 지표 파라미터 ══════════════════ */
+function applyTheme(theme) {
+  state.theme = theme;
+  document.documentElement.setAttribute("data-theme", theme);
+  localStorage.setItem("ss.theme", theme);
+  const sel = $("themeSelect"); if (sel) sel.value = theme;
+  // 토큰이 바뀌었으니 캔버스 색을 다시 읽고 그린다
+  syncChartColors();
+  if (state.data) renderAll();
+}
+
+function applyDensity(density) {
+  state.density = density;
+  document.documentElement.setAttribute("data-density", density);
+  localStorage.setItem("ss.density", density);
+  const sel = $("densitySelect"); if (sel) sel.value = density;
+  // 밀도가 바뀌면 카드 크기가 달라지므로 캔버스를 다시 맞춘다
+  if (state.data) requestAnimationFrame(renderAll);
+}
+
+$("themeBtn").addEventListener("click", () => applyTheme(state.theme === "dark" ? "light" : "dark"));
+$("themeSelect").addEventListener("change", (e) => applyTheme(e.target.value));
+$("densitySelect").addEventListener("change", (e) => applyDensity(e.target.value));
+
+function fillParamInputs() {
+  $("paramVolLen").value = state.params.vol_len;
+  $("paramFibLen").value = state.params.fib_len;
+  $("paramAdxThr").value = state.params.adx_thr;
+}
+
+function readParamInputs() {
+  const raw = {
+    vol_len: Number($("paramVolLen").value),
+    fib_len: Number($("paramFibLen").value),
+    adx_thr: Number($("paramAdxThr").value),
+  };
+  for (const [k, r] of Object.entries(PARAM_RANGE)) {
+    if (!Number.isFinite(raw[k])) return { error: `${r.label}에 숫자를 입력하세요.` };
+    if (raw[k] < r.min || raw[k] > r.max) {
+      return { error: `${r.label}은 ${r.min} 이상 ${r.max} 이하여야 합니다.` };
+    }
+  }
+  return { params: raw };
+}
+
+$("paramApplyBtn").addEventListener("click", async () => {
+  const err = $("paramError");
+  err.textContent = "";
+  const { params, error } = readParamInputs();
+  if (error) { err.textContent = error; return; }
+  state.params = params;
+  localStorage.setItem("ss.params", JSON.stringify(params));
+  await loadAnalysis();
+  toast("지표 파라미터를 적용했습니다.");
+});
+
+$("paramResetBtn").addEventListener("click", async () => {
+  state.params = { ...DEFAULT_PARAMS };
+  localStorage.removeItem("ss.params");
+  fillParamInputs();
+  $("paramError").textContent = "";
+  await loadAnalysis();
+  toast("기본값으로 되돌렸습니다.");
+});
+
 /* ══════════════════ 시작 ══════════════════ */
 (async function init() {
+  // 색·간격 토큰을 먼저 확정한 뒤에 캔버스를 그린다
+  document.documentElement.setAttribute("data-theme", state.theme);
+  document.documentElement.setAttribute("data-density", state.density);
+  syncChartColors();
+  fillParamInputs();
+  $("themeSelect").value = state.theme;
+  $("densitySelect").value = state.density;
+
   addCandleRule(0);
   updateLayerSummary();
   try {

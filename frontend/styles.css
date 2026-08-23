@@ -1,8 +1,13 @@
 /* ═══════════════════════════════════════════════════════════════
-   시그널 레저 — 다크 단일 테마.
-   트레이딩 데스크는 어두운 화면에 오래 머무는 도구라, 라이트 테마로
-   자동 반전시키지 않고 하나의 시각 세계에 의도적으로 고정한다.
-   대신 모든 색은 토큰으로 명시해 호스트 배경을 빌려오지 않는다.
+   SmartSignal — 토큰 정의
+
+   트레이딩 화면은 어두운 배경에 오래 머무는 도구라 다크를 기본값으로 둔다.
+   그래서 라이트가 아니라 다크 팔레트를 bare :root 에 둔다 — 이러면 JS가
+   실패하거나 아직 안 붙었을 때도 의도한 기본 화면이 그대로 나온다.
+   라이트는 [data-theme="light"] 로만 덮어쓴다.
+
+   밀도(compact/normal/pro)는 간격·글자크기 토큰만 바꾼다. 색과 구조는
+   건드리지 않으므로 어떤 조합이어도 화면이 깨지지 않는다.
    ═══════════════════════════════════════════════════════════════ */
 :root {
   color-scheme: dark;
@@ -21,19 +26,21 @@
   /* UI 크롬 전용 강조색 — 차트 시리즈에는 쓰지 않는다 */
   --accent:     #3EE8B0;
   --accent-dim: #1C6D55;
+  --accent-ink: #04211A;   /* 강조색 위에 올리는 글자색 */
 
   /* 예약된 상태색 — 항상 텍스트/아이콘과 함께 쓴다 */
   --bull:       #2BB98A;
   --bear:       #E5484D;
   --warn:       #E0A32E;
 
-  /* 검증 통과한 카테고리 시리즈 (validate_palette.js, dark #0E1519) */
+  /* 검증 통과한 카테고리 시리즈 (validate_palette.js, dark surface #0E1519) */
   --s-ema:      #199e70;
   --s-vwap:     #c98500;
   --s-rf:       #3987e5;
   --s-band:     #46606B;   /* 포락선 — 정체성 시리즈가 아니므로 후퇴 */
   --s-fib:      #7C8FA6;
   --s-fbb:      #8E6FB0;
+  --grid:       #152128;
 
   --tone-mint:   #3EE8B0;
   --tone-blue:   #5B9CF0;
@@ -41,12 +48,94 @@
   --tone-violet: #A98BE0;
   --tone-slate:  #7E949A;
 
+  --shadow-modal: 0 24px 70px rgba(0,0,0,.6);
+  --shadow-pop:   0 8px 26px rgba(0,0,0,.55);
+  --scrim:        rgba(3, 7, 9, .74);
+
   --r-sm: 8px;
   --r-md: 12px;
   --r-lg: 16px;
 
   --sans: "IBM Plex Sans KR", -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, monospace;
+
+  /* 밀도 토큰 — 기본(normal) */
+  --pad-card:   20px 22px;
+  --pad-view:   26px 30px 60px;
+  --gap-card:   16px;
+  --gap-inner:  14px;
+  --fs-base:    14px;
+  --fs-h1:      46px;
+  --fs-h2:      19px;
+  --fs-price:   34px;
+  --row-pad:    10px;
+}
+
+/* 라이트 — 종이 위 잉크에 가깝게. 시리즈 색은 밝은 배경에서 대비가 나도록
+   같은 계열의 더 진한 단계를 쓴다(단순 반전이 아님). */
+:root[data-theme="light"] {
+  color-scheme: light;
+
+  --bg:         #F4F7F6;
+  --surface-1:  #FFFFFF;
+  --surface-2:  #F1F5F4;
+  --surface-3:  #E6ECEA;
+  --border:     #DCE4E2;
+  --border-2:   #C3CFCC;
+
+  --ink:        #10201C;
+  --ink-2:      #4E635E;
+  --ink-3:      #7C918C;
+
+  --accent:     #0B8F68;
+  --accent-dim: #C6EBDC;
+  --accent-ink: #FFFFFF;
+
+  --bull:       #0E8A63;
+  --bear:       #C4322F;
+  --warn:       #A2700F;
+
+  --s-ema:      #12805A;
+  --s-vwap:     #A06A00;
+  --s-rf:       #2a78d6;
+  --s-band:     #8598A0;
+  --s-fib:      #63788C;
+  --s-fbb:      #6E4F94;
+  --grid:       #E4EBE9;
+
+  --tone-mint:   #0B8F68;
+  --tone-blue:   #2a78d6;
+  --tone-amber:  #A2700F;
+  --tone-violet: #6E4F94;
+  --tone-slate:  #5C7076;
+
+  --shadow-modal: 0 20px 56px rgba(16, 32, 28, .18);
+  --shadow-pop:   0 8px 22px rgba(16, 32, 28, .14);
+  --scrim:        rgba(16, 32, 28, .38);
+}
+
+/* 밀도 프리셋 — 간격과 글자크기만 조정한다 */
+:root[data-density="compact"] {
+  --pad-card:  14px 16px;
+  --pad-view:  18px 20px 44px;
+  --gap-card:  11px;
+  --gap-inner: 10px;
+  --fs-base:   13px;
+  --fs-h1:     36px;
+  --fs-h2:     17px;
+  --fs-price:  27px;
+  --row-pad:   7px;
+}
+:root[data-density="pro"] {
+  --pad-card:  11px 13px;
+  --pad-view:  13px 16px 36px;
+  --gap-card:  8px;
+  --gap-inner: 8px;
+  --fs-base:   12.5px;
+  --fs-h1:     30px;
+  --fs-h2:     15px;
+  --fs-price:  23px;
+  --row-pad:   5px;
 }
 
 * { box-sizing: border-box; }
@@ -56,7 +145,7 @@ html, body {
   background: var(--bg);
   color: var(--ink);
   font-family: var(--sans);
-  font-size: 14px;
+  font-size: var(--fs-base);
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
@@ -207,8 +296,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .icon-btn:hover { color: var(--accent); border-color: var(--accent-dim); }
 .icon-btn.busy { opacity: .5; pointer-events: none; }
 
-#viewport { flex: 1; overflow-y: auto; padding: 26px 30px 60px; }
-.view { display: none; flex-direction: column; gap: 18px; max-width: 1580px; }
+#viewport { flex: 1; overflow-y: auto; padding: var(--pad-view); }
+.view { display: none; flex-direction: column; gap: var(--gap-card); max-width: 1580px; }
 .view.active { display: flex; }
 
 /* ══════════════ 판정 히어로 ══════════════ */
@@ -227,14 +316,14 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .verdict-body, .verdict-price { position: relative; z-index: 1; }
 .verdict-body { display: flex; flex-direction: column; gap: 9px; }
 #verdictWord {
-  font-size: 46px; font-weight: 700; line-height: 1.05;
+  font-size: var(--fs-h1); font-weight: 700; line-height: 1.05;
   color: var(--verdict-tone, var(--ink));
 }
 .verdict-sub { color: var(--ink-2); font-size: 13px; }
 .verdict-price { text-align: right; display: flex; flex-direction: column; gap: 5px; align-items: flex-end; }
 .verdict-price .eyebrow { justify-content: flex-end; }
 #priceValue {
-  font-family: var(--mono); font-size: 34px; font-weight: 600;
+  font-family: var(--mono); font-size: var(--fs-price); font-weight: 600;
   letter-spacing: -0.02em; font-variant-numeric: tabular-nums;
 }
 .delta { font-family: var(--mono); font-size: 12.5px; font-variant-numeric: tabular-nums; color: var(--ink-2); }
@@ -284,11 +373,11 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 /* ══════════════ 카드 공통 ══════════════ */
 .card {
   background: var(--surface-1); border: 1px solid var(--border);
-  border-radius: var(--r-lg); padding: 20px 22px;
-  display: flex; flex-direction: column; gap: 14px; min-width: 0;
+  border-radius: var(--r-lg); padding: var(--pad-card);
+  display: flex; flex-direction: column; gap: var(--gap-inner); min-width: 0;
 }
 .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
-.card-head h2 { font-size: 19px; font-weight: 600; margin-top: 3px; }
+.card-head h2 { font-size: var(--fs-h2); font-weight: 600; margin-top: 3px; }
 .head-icon { width: 20px; height: 20px; color: var(--ink-3); flex: 0 0 auto; }
 .regime-pill {
   font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 999px;
@@ -304,8 +393,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 }
 
 /* ══════════════ 개요 그리드 ══════════════ */
-.overview-grid { display: grid; grid-template-columns: minmax(0, 1.62fr) minmax(320px, 1fr); gap: 16px; }
-.overview-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.overview-grid { display: grid; grid-template-columns: minmax(0, 1.62fr) minmax(320px, 1fr); gap: var(--gap-card); }
+.overview-side { display: flex; flex-direction: column; gap: var(--gap-card); min-width: 0; }
 
 .legend { display: flex; gap: 16px; list-style: none; margin: 0; padding: 0; flex-wrap: wrap; }
 .legend li { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--ink-2); }
@@ -318,7 +407,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
   background: var(--surface-3); border: 1px solid var(--border-2);
   border-radius: var(--r-sm); padding: 8px 11px;
   font-family: var(--mono); font-size: 11px; line-height: 1.65; white-space: pre;
-  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+  box-shadow: var(--shadow-pop);
 }
 .plot-tip.hidden { display: none; }
 
@@ -353,7 +442,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .level-list { margin: 0; display: flex; flex-direction: column; gap: 0; }
 .level-row {
   display: flex; align-items: center; justify-content: space-between; gap: 12px;
-  padding: 10px 0; border-bottom: 1px solid var(--border);
+  padding: var(--row-pad) 0; border-bottom: 1px solid var(--border);
 }
 .level-row:last-child { border-bottom: none; }
 .level-row.spacer-top { margin-top: 6px; padding-top: 15px; border-top: 1px solid var(--border); }
@@ -366,7 +455,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .level-dot { width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
 
 /* ══════════════ 지표 타일 ══════════════ */
-.tile-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }
+.tile-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--gap-card); }
 .tile {
   background: var(--surface-1); border: 1px solid var(--border);
   border-radius: var(--r-lg); padding: 18px 20px;
@@ -409,8 +498,8 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .note-banner { font-size: 12px; color: var(--warn); }
 .note-banner:empty { display: none; }
 
-.ledger-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 16px; align-items: start; }
-.ledger-side { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ledger-grid { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: var(--gap-card); align-items: start; }
+.ledger-side { display: flex; flex-direction: column; gap: var(--gap-card); min-width: 0; }
 .chart-card { padding: 14px; }
 .chart-stack { position: relative; display: flex; flex-direction: column; }
 #chartCanvas { width: 100%; height: 460px; display: block; cursor: crosshair; }
@@ -465,7 +554,7 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .custom-pat-row .del-btn:hover { color: var(--bear); background: color-mix(in srgb, var(--bear) 14%, transparent); }
 
 /* ══════════════ 표시 설정 ══════════════ */
-.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: 16px; align-items: start; }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(310px, 1fr)); gap: var(--gap-card); align-items: start; }
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field label { font-size: 11.5px; color: var(--ink-3); }
 select, input[type="text"], input:not([type]), input[type="number"] {
@@ -500,7 +589,7 @@ select:hover, input:hover { border-color: var(--border-2); }
 
 /* ══════════════ 버튼 ══════════════ */
 .primary-btn {
-  background: var(--accent); border: none; color: #04211A;
+  background: var(--accent); border: none; color: var(--accent-ink);
   border-radius: var(--r-md); padding: 11px 20px; font-size: 13px; font-weight: 700;
 }
 .primary-btn:hover { background: color-mix(in srgb, var(--accent) 84%, white); }
@@ -515,7 +604,7 @@ select:hover, input:hover { border-color: var(--border-2); }
 /* ══════════════ 모달 ══════════════ */
 .modal {
   position: fixed; inset: 0; z-index: 100;
-  background: rgba(3, 7, 9, .74);
+  background: var(--scrim);
   display: flex; align-items: center; justify-content: center; padding: 20px;
 }
 .modal.hidden { display: none; }
@@ -523,7 +612,7 @@ select:hover, input:hover { border-color: var(--border-2); }
   background: var(--surface-1); border: 1px solid var(--border-2);
   border-radius: var(--r-lg); width: 480px; max-height: 88vh; overflow-y: auto;
   padding: 22px; display: flex; flex-direction: column; gap: 14px;
-  box-shadow: 0 24px 70px rgba(0,0,0,.6);
+  box-shadow: var(--shadow-modal);
 }
 .modal-head { display: flex; justify-content: space-between; align-items: center; }
 .modal-head h3 { font-size: 17px; font-weight: 600; }
@@ -572,7 +661,7 @@ select:hover, input:hover { border-color: var(--border-2); }
   background: var(--surface-3); color: var(--ink);
   border: 1px solid var(--border-2); border-radius: var(--r-sm);
   padding: 8px 11px; font-size: 11.5px; line-height: 1.6; white-space: pre-line;
-  box-shadow: 0 8px 26px rgba(0,0,0,.55);
+  box-shadow: var(--shadow-pop);
 }
 .tooltip.hidden { display: none; }
 
@@ -582,7 +671,7 @@ select:hover, input:hover { border-color: var(--border-2); }
   border: 1px solid var(--border-2); border-left: 3px solid var(--accent);
   border-radius: var(--r-md); padding: 12px 18px; font-size: 12.5px;
   max-width: 440px; z-index: 300; opacity: 0; pointer-events: none;
-  box-shadow: 0 12px 34px rgba(0,0,0,.55);
+  box-shadow: var(--shadow-modal);
   transition: opacity .22s, transform .22s;
 }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }
@@ -665,3 +754,18 @@ select:hover, input:hover { border-color: var(--border-2); }
 
 .field-hint { color: var(--ink-3); opacity: .75; margin-left: 4px; }
 #exchangeField.hidden { display: none; }
+
+/* ══════════════ 테마 토글 · 지표 파라미터 ══════════════ */
+#themeBtn .icon-light { display: none; }
+:root[data-theme="light"] #themeBtn .icon-dark { display: none; }
+:root[data-theme="light"] #themeBtn .icon-light { display: block; }
+
+.param-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  padding: var(--row-pad) 0; border-bottom: 1px solid var(--border);
+}
+.param-row:last-of-type { border-bottom: none; }
+.param-row label { font-size: 12.5px; color: var(--ink-2); }
+.param-row input { width: 110px; text-align: right; font-family: var(--mono); }
+.param-actions { display: flex; gap: 8px; }
+.param-actions .ghost-btn, .param-actions .primary-btn { flex: 1; margin: 0; }
