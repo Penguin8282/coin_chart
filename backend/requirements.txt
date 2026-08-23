@@ -4,3 +4,4 @@ httpx
 numpy
 pydantic
 python-dotenv
+pg8000

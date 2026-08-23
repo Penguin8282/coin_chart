@@ -46,6 +46,17 @@
     자동으로 다음 폴백(비공식 API → 야후 → 데모)으로 넘어갑니다.
   - 토스증권 비공식 API(`wts-info-api.tossinvest.com`)는 공식 문서가 없는 리버스엔지니어링 API라
     엔드포인트가 바뀌면 깨질 수 있습니다 — 실패 시 자동으로 야후로 폴백합니다.
+- **계정과 개인 기록**: 회원가입·로그인(세션 쿠키)을 지원하며, 관심종목·나만의 패턴·매매
+  기록이 계정별로 분리되어 저장됩니다. 어느 기기에서 접속해도 로그인하면 그대로 이어집니다.
+  차트 분석 자체는 로그인 없이 전부 쓸 수 있고, "내 것을 저장하는" 기능만 로그인을 요구합니다.
+  - 비밀번호는 scrypt 해시로만 저장하고(평문 저장 없음), 세션 토큰도 SHA-256 해시로만
+    DB에 둡니다. 로그인 실패가 반복되면 잠시 막습니다(10분에 8회).
+  - ⚠️ **Render 무료 플랜은 디스크가 임시라 재배포·재시작 때 SQLite 파일이 사라집니다.**
+    계정과 기록을 진짜로 보관하려면 Neon·Supabase 같은 무료 Postgres를 만들고
+    `DATABASE_URL` 환경변수에 연결 주소를 넣으세요. 미설정 시 SQLite로 동작합니다
+    (로컬 개발은 이대로 충분합니다).
+  - 매매 기록은 직접 입력입니다. 증권사·거래소 잔고 자동 연동은 개인 개발자에게
+    권한이 열려 있지 않고, 거래소 API 키는 유출 시 자산이 직접 위험해져 넣지 않았습니다.
 - **스크리너 (지금 신호가 뜬 종목)**: 종목을 하나씩 눌러보지 않고도 여러 종목을 한 번에 훑어
   점수순으로 정렬해 보여줍니다. 범위(관심종목/코인/미국주식/한국주식/전체) · 시간단위 · 방향 ·
   최소 점수로 좁힐 수 있고, 행을 누르면 그 종목 차트로 바로 넘어갑니다.
@@ -135,7 +146,8 @@ backend/
   screener.py               여러 종목 일괄 스캔 (동시 실행 제한 + 데모 종목 제외)
   backtest.py               과거 성적 검증 (한 봉 내 TP/SL 동시 터치는 손절 처리)
   range_filter_fbb.py       Range Filter + Fibonacci BB (range_filter_fibonacci_bb.pine 이식)
-  db.py                     SQLite (커스텀 패턴 / 관심종목 저장)
+  db.py                     저장소 — 로컬 SQLite / 배포 Postgres(DATABASE_URL) 이중 지원
+  auth.py                   비밀번호 해시(scrypt)·세션·로그인 시도 제한
   patterns/
     pivots.py               스윙 고점/저점(피벗) 탐지
     candlestick.py          캔들스틱 패턴 탐지
@@ -153,6 +165,8 @@ data/                       SQLite DB 파일 위치 (git 제외)
 - `GET /api/diag?market=&symbol=&interval=` — 데이터 소스별 연결 진단
 - `GET /api/candles?market=&symbol=&interval=&limit=` — OHLCV 캔들
 - `GET /api/analysis?market=&symbol=&interval=&limit=` — 지표/점수/패턴 탐지 전체 결과
+- `POST /api/auth/register` · `POST /api/auth/login` · `POST /api/auth/logout` · `GET /api/auth/me` — 계정
+- `GET/POST/DELETE /api/portfolio(/trades)` — 매매 기록과 보유 현황 (로그인 필요)
 - `GET /api/screener?scope=&interval=&direction=&min_score=` — 여러 종목 일괄 스캔, 점수순 정렬
 - `GET /api/backtest?market=&symbol=&interval=&min_score=&max_bars=&fee_pct=` — 과거 성적 검증
 - `GET/POST/DELETE /api/patterns/custom` — 사용자 정의 패턴 CRUD (`/rule`, `/shape` 하위 경로)
