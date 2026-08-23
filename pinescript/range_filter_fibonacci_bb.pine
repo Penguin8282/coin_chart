@@ -1,0 +1,77 @@
+// This source code is subject to the terms of the Mozilla Public License 2.0 at https://mozilla.org/MPL/2.0/
+
+// Combined Indicator: Range Filter (B&S Signals) + Fibonacci Bollinger Bands
+// Credits:
+//   - Range Filter: Original by DonovanWall (https://www.tradingview.com/script/lut7sBgG-Range-Filter-DW/)
+//   - Fibonacci Bollinger Bands: Standard BB with Fibonacci ratios
+
+//@version=6
+indicator(title="Range Filter + Fibonacci BB", shorttitle="RF + FBB", overlay=true)
+
+rng_size(float x, float qty, int n) =>
+    wper  = (n * 2) - 1
+    avrng = ta.ema(math.abs(x - x[1]), n)
+    AC    = ta.ema(avrng, wper) * qty
+    AC
+
+rng_filt(float x, float rng_, int n) =>
+    r = rng_
+    var array<float> rfilt = array.new<float>(2, x)
+    array.set(rfilt, 1, array.get(rfilt, 0))
+    if x - r > array.get(rfilt, 1)
+        array.set(rfilt, 0, x - r)
+    if x + r < array.get(rfilt, 1)
+        array.set(rfilt, 0, x + r)
+    rng_filt1 = array.get(rfilt, 0)
+
+    hi_band = rng_filt1 + r
+    lo_band = rng_filt1 - r
+    [hi_band, lo_band, rng_filt1]
+
+groupRF = "Range Filter Settings"
+rng_src      = input.source(close, title="RF: Swing Source",        group=groupRF)
+rng_per      = input.int(20,  minval=1,         title="RF: Swing Period",     group=groupRF)
+rng_qty      = input.float(3.5, minval=0.0000001, title="RF: Swing Multiplier", group=groupRF)
+use_barcolor = input.bool(false, title="RF: Bar Colors On/Off",     group=groupRF)
+show_rf      = input.bool(true,  title="RF: Show Filter & Bands",   group=groupRF)
+show_signals = input.bool(true,  title="RF: Show Buy/Sell Labels",  group=groupRF)
+
+groupFBB = "Fibonacci Bollinger Bands Settings"
+fbb_length = input.int(200, minval=1, title="FBB: Length",          group=groupFBB)
+fbb_src    = input.source(hlc3,        title="FBB: Source",         group=groupFBB)
+fbb_mult   = input.float(3.0, minval=0.001, maxval=50, title="FBB: StdDev Multiplier", group=groupFBB)
+show_fbb   = input.bool(true,         title="FBB: Show Bands",      group=groupFBB)
+
+[h_band, l_band, filt] = rng_filt(rng_src, rng_size(rng_src, rng_qty, rng_per), rng_per)
+
+var float fdir = 0.0
+fdir := filt > filt[1] ? 1 : filt < filt[1] ? -1 : fdir
+upward   = fdir ==  1 ? 1 : 0
+downward = fdir == -1 ? 1 : 0
+
+longCond  = (rng_src > filt and rng_src > rng_src[1] and upward   > 0) or (rng_src > filt and rng_src < rng_src[1] and upward   > 0)
+shortCond = (rng_src < filt and rng_src < rng_src[1] and downward > 0) or (rng_src < filt and rng_src > rng_src[1] and downward > 0)
+
+var int CondIni = 0
+CondIni := longCond ? 1 : shortCond ? -1 : CondIni[1]
+longCondition  = longCond  and CondIni[1] == -1
+shortCondition = shortCond and CondIni[1] ==  1
+
+basis = ta.vwma(fbb_src, fbb_length)
+dev   = fbb_mult * ta.stdev(fbb_src, fbb_length)
+
+upper_1 = basis + (0.236 * dev)
+upper_2 = basis + (0.382 * dev)
+upper_3 = basis + (0.500 * dev)
+upper_4 = basis + (0.618 * dev)
+upper_5 = basis + (0.764 * dev)
+upper_6 = basis + (1.000 * dev)
+
+lower_1 = basis - (0.236 * dev)
+lower_2 = basis - (0.382 * dev)
+lower_3 = basis - (0.500 * dev)
+lower_4 = basis - (0.618 * dev)
+lower_5 = basis - (0.764 * dev)
+lower_6 = basis - (1.000 * dev)
+
+// (플롯 로직은 원본과 동일 — 백엔드(backend/range_filter_fbb.py)로 이식됨)

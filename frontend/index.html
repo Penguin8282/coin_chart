@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>🏦 개인 차트 분석 시스템</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🏦</text></svg>" />
+<link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+<header id="topbar">
+  <div class="brand">🏦 <span>개인 차트 분석 시스템</span></div>
+
+  <div class="controls">
+    <select id="marketSelect">
+      <option value="crypto">코인</option>
+      <option value="us">미국주식</option>
+      <option value="kr">한국주식</option>
+    </select>
+    <select id="symbolSelect"></select>
+    <input id="customSymbol" placeholder="티커 직접입력 (예: NVDA, 000660)" />
+    <select id="intervalSelect">
+      <option value="15m">15분</option>
+      <option value="1h" selected>1시간</option>
+      <option value="4h">4시간</option>
+      <option value="1d">1일</option>
+      <option value="1w">1주</option>
+    </select>
+    <button id="loadBtn">불러오기</button>
+    <button id="watchAddBtn" title="현재 종목을 관심종목에 추가">☆ 관심추가</button>
+    <span id="sourceBadge" class="badge">-</span>
+  </div>
+
+  <div class="toggles">
+    <label><input type="checkbox" id="tgEma" checked> EMA</label>
+    <label><input type="checkbox" id="tgVwap" checked> VWAP</label>
+    <label><input type="checkbox" id="tgBb" checked> BB</label>
+    <label><input type="checkbox" id="tgFib" checked> 피보나치</label>
+    <label><input type="checkbox" id="tgRf"> Range Filter</label>
+    <label><input type="checkbox" id="tgFbb"> Fibo BB</label>
+    <label><input type="checkbox" id="tgCandlePat" checked> 캔들패턴</label>
+    <label><input type="checkbox" id="tgChartPat" checked> 차트패턴</label>
+    <label><input type="checkbox" id="tgCustomPat" checked> 커스텀패턴</label>
+  </div>
+</header>
+
+<main id="mainLayout">
+  <section id="chartArea">
+    <div id="chartToolbar">
+      <button id="selectModeBtn" title="차트에서 구간을 드래그해 나만의 모양 패턴으로 저장">✂️ 구간 선택 (모양 패턴)</button>
+      <span id="selectHint" class="hint"></span>
+      <span id="noteBanner" class="note"></span>
+    </div>
+    <canvas id="chartCanvas"></canvas>
+    <canvas id="volCanvas"></canvas>
+    <div id="crosshairReadout"></div>
+  </section>
+
+  <aside id="sidePanel">
+    <div class="panel" id="watchlistPanel">
+      <h3>⭐ 관심종목</h3>
+      <div id="watchlistList"></div>
+    </div>
+
+    <div class="panel" id="dashboardPanel">
+      <h3>🎯 기관급 대시보드</h3>
+      <table id="dashboardTable"></table>
+    </div>
+
+    <div class="panel" id="patternsPanel">
+      <div class="tabs">
+        <button class="tab active" data-tab="chart">차트패턴</button>
+        <button class="tab" data-tab="candle">캔들패턴</button>
+        <button class="tab" data-tab="custom">커스텀</button>
+      </div>
+      <div id="patternList" class="pattern-list"></div>
+    </div>
+
+    <div class="panel" id="customPanel">
+      <h3>🧩 나만의 패턴</h3>
+      <button id="openBuilderBtn" class="wide-btn">+ 새 패턴 만들기</button>
+      <div id="customPatternMgmt"></div>
+    </div>
+  </aside>
+</main>
+
+<!-- 커스텀 패턴 빌더 모달 -->
+<div id="builderModal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head">
+      <h3>🧩 나만의 패턴 만들기</h3>
+      <button id="closeBuilderBtn">✕</button>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-btab="rule">규칙 빌더</button>
+      <button class="tab" data-btab="shape">모양 그리기</button>
+    </div>
+
+    <div id="ruleBuilder" class="builder-body">
+      <p class="desc">캔들 몇 개(현재봉=0, 이전봉=-1, -2...)에 대해 조건을 조합해 나만의 캔들 패턴을 정의합니다.</p>
+      <label>패턴 이름 <input id="ruleName" placeholder="예: 나만의 반전캔들" /></label>
+      <label>방향
+        <select id="ruleDirection">
+          <option value="bullish">상승(매수)</option>
+          <option value="bearish">하락(매도)</option>
+          <option value="neutral">중립</option>
+        </select>
+      </label>
+      <div id="ruleCandles"></div>
+      <button id="addCandleBtn" class="ghost-btn">+ 캔들 추가</button>
+      <div class="modal-actions">
+        <button id="saveRuleBtn" class="primary-btn">저장</button>
+      </div>
+      <div id="ruleError" class="error"></div>
+    </div>
+
+    <div id="shapeBuilder" class="builder-body hidden">
+      <p class="desc">차트에서 <b>✂️ 구간 선택</b> 버튼을 누르고 원하는 구간을 드래그로 선택하면
+      여기에 미리보기가 표시됩니다. 저장하면 전체 히스토리에서 비슷한 모양을 자동으로 찾아줍니다.</p>
+      <label>패턴 이름 <input id="shapeName" placeholder="예: 내가 찜한 V자 반등" /></label>
+      <label>방향
+        <select id="shapeDirection">
+          <option value="bullish">상승(매수)</option>
+          <option value="bearish">하락(매도)</option>
+          <option value="neutral">중립</option>
+        </select>
+      </label>
+      <canvas id="shapePreview" width="380" height="120"></canvas>
+      <div class="modal-actions">
+        <button id="saveShapeBtn" class="primary-btn" disabled>저장</button>
+      </div>
+      <div id="shapeError" class="error"></div>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip" class="tooltip hidden"></div>
+
+<script src="/static/app.js"></script>
+</body>
+</html>
