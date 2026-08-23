@@ -115,6 +115,17 @@ button:hover { border-color: var(--accent); }
 }
 .custom-pat-row .del-btn { padding: 2px 8px; color: var(--bear); border-color: var(--bear); }
 
+#watchlistList { display: flex; flex-direction: column; gap: 6px; max-height: 160px; overflow-y: auto; }
+.watch-row {
+  display: flex; justify-content: space-between; align-items: center; gap: 6px;
+  padding: 6px 8px; background: var(--panel); border: 1px solid var(--border); border-radius: 6px; font-size: 11.5px;
+  cursor: pointer;
+}
+.watch-row:hover { border-color: var(--accent); }
+.watch-row .wr-market { color: var(--text-dim); font-size: 10.5px; margin-right: 4px; }
+.watch-row .del-btn { padding: 2px 8px; color: var(--bear); border-color: var(--bear); flex: 0 0 auto; }
+#watchAddBtn.active { background: var(--accent); border-color: var(--accent); color: #1a1400; font-weight: 700; }
+
 /* 모달 */
 .modal {
   position: fixed; inset: 0; background: rgba(0,0,0,0.6);

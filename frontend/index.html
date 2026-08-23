@@ -27,6 +27,7 @@
       <option value="1w">1주</option>
     </select>
     <button id="loadBtn">불러오기</button>
+    <button id="watchAddBtn" title="현재 종목을 관심종목에 추가">☆ 관심추가</button>
     <span id="sourceBadge" class="badge">-</span>
   </div>
 
@@ -56,6 +57,11 @@
   </section>
 
   <aside id="sidePanel">
+    <div class="panel" id="watchlistPanel">
+      <h3>⭐ 관심종목</h3>
+      <div id="watchlistList"></div>
+    </div>
+
     <div class="panel" id="dashboardPanel">
       <h3>🎯 기관급 대시보드</h3>
       <table id="dashboardTable"></table>

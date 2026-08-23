@@ -20,6 +20,7 @@ const state = {
   selecting: null,      // 구간선택 드래그 상태 { x0, x1 }
   selectedRange: null,  // { start_idx, end_idx }
   customPatterns: [],
+  watchlist: [],
   activeListTab: "chart",
   activeBuilderTab: "rule",
   markersCache: [],     // 마지막 draw에서 계산된 클릭/호버 가능 마커 목록
@@ -68,6 +69,8 @@ const el = {
   patternList: document.getElementById("patternList"),
   customMgmt: document.getElementById("customPatternMgmt"),
   selectModeBtn: document.getElementById("selectModeBtn"),
+  watchAddBtn: document.getElementById("watchAddBtn"),
+  watchlistList: document.getElementById("watchlistList"),
   selectHint: document.getElementById("selectHint"),
   tooltip: document.getElementById("tooltip"),
   builderModal: document.getElementById("builderModal"),
@@ -106,6 +109,7 @@ async function loadAnalysis() {
     el.sourceBadge.className = "badge " + (data.source === "demo" ? "demo" : "live");
     el.noteBanner.textContent = data.note || "";
     renderAll();
+    updateWatchAddBtn();
   } catch (e) {
     alert("데이터 로드 실패: " + e.message);
   } finally {
@@ -117,6 +121,12 @@ async function loadAnalysis() {
 async function loadCustomPatterns() {
   state.customPatterns = await api("/patterns/custom");
   renderCustomPatternMgmt();
+}
+
+async function loadWatchlist() {
+  state.watchlist = await api("/watchlist");
+  renderWatchlist();
+  updateWatchAddBtn();
 }
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -683,6 +693,65 @@ function renderCustomPatternMgmt() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════
+// 관심종목
+// ═══════════════════════════════════════════════════════════════════════
+const MARKET_LABEL = { crypto: "코인", us: "미국", kr: "한국" };
+
+function renderWatchlist() {
+  if (!state.watchlist.length) {
+    el.watchlistList.innerHTML = `<div class="empty-msg">관심종목이 없습니다</div>`;
+    return;
+  }
+  el.watchlistList.innerHTML = state.watchlist.map(w => `
+    <div class="watch-row" data-market="${w.market}" data-symbol="${w.symbol}">
+      <span><span class="wr-market">${MARKET_LABEL[w.market] || w.market}</span>${w.symbol}</span>
+      <button class="del-btn" data-market="${w.market}" data-symbol="${w.symbol}">삭제</button>
+    </div>`).join("");
+  el.watchlistList.querySelectorAll(".watch-row").forEach(row => {
+    row.addEventListener("click", (e) => {
+      if (e.target.closest(".del-btn")) return;
+      const { market, symbol } = row.dataset;
+      el.market.value = market;
+      state.market = market;
+      populateSymbolSelect();
+      el.customSymbol.value = symbol;
+      el.symbol.value = [...el.symbol.options].some(o => o.value === symbol) ? symbol : el.symbol.value;
+      el.interval.value = state.interval;
+      loadAnalysis();
+    });
+  });
+  el.watchlistList.querySelectorAll(".del-btn").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      const { market, symbol } = btn.dataset;
+      await api(`/watchlist?market=${encodeURIComponent(market)}&symbol=${encodeURIComponent(symbol)}`, { method: "DELETE" });
+      await loadWatchlist();
+    });
+  });
+}
+
+function updateWatchAddBtn() {
+  if (!state.data) return;
+  const inList = state.watchlist.some(w => w.market === state.market && w.symbol === state.symbol);
+  el.watchAddBtn.textContent = inList ? "★ 관심종목" : "☆ 관심추가";
+  el.watchAddBtn.classList.toggle("active", inList);
+}
+
+el.watchAddBtn.addEventListener("click", async () => {
+  if (!state.data) return;
+  const inList = state.watchlist.some(w => w.market === state.market && w.symbol === state.symbol);
+  if (inList) {
+    await api(`/watchlist?market=${encodeURIComponent(state.market)}&symbol=${encodeURIComponent(state.symbol)}`, { method: "DELETE" });
+  } else {
+    await api("/watchlist", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ market: state.market, symbol: state.symbol }),
+    });
+  }
+  await loadWatchlist();
+});
+
+// ═══════════════════════════════════════════════════════════════════════
 // 인터랙션: 줌 / 팬 / 크로스헤어 / 구간선택
 // ═══════════════════════════════════════════════════════════════════════
 function canvasMouseX(e, canvas) {
@@ -1001,5 +1070,6 @@ window.addEventListener("resize", () => { if (state.data) renderAll(); });
   addCandleRule(0);
   await loadMarkets();
   await loadCustomPatterns();
+  await loadWatchlist();
   await loadAnalysis();
 })();
