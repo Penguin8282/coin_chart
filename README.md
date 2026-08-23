@@ -46,6 +46,23 @@
     자동으로 다음 폴백(비공식 API → 야후 → 데모)으로 넘어갑니다.
   - 토스증권 비공식 API(`wts-info-api.tossinvest.com`)는 공식 문서가 없는 리버스엔지니어링 API라
     엔드포인트가 바뀌면 깨질 수 있습니다 — 실패 시 자동으로 야후로 폴백합니다.
+- **스크리너 (지금 신호가 뜬 종목)**: 종목을 하나씩 눌러보지 않고도 여러 종목을 한 번에 훑어
+  점수순으로 정렬해 보여줍니다. 범위(관심종목/코인/미국주식/한국주식/전체) · 시간단위 · 방향 ·
+  최소 점수로 좁힐 수 있고, 행을 누르면 그 종목 차트로 바로 넘어갑니다.
+  - 한 번에 최대 40종목까지 훑고, 거래소 요청 한도를 넘지 않도록 동시 실행을 6개로 제한합니다.
+    같은 종목·간격 요청은 짧은 TTL 캐시로 재사용합니다.
+  - ⚠️ **시세를 못 가져와 데모 데이터로 폴백한 종목은 결과에서 제외합니다.** 가짜 점수를 진짜인 것처럼
+    순위에 섞으면 안 되기 때문이며, 몇 개가 왜 빠졌는지 화면에 따로 표시합니다.
+- **백테스트 (이 신호를 따랐다면)**: 선택한 종목·시간단위의 과거 데이터로 22점 신호를 그대로
+  따랐을 때의 성적을 계산합니다. 승률 · 평균 손익비 · 최대 낙폭(MDD) · 총 수익률, 누적 수익 곡선,
+  거래 내역, 그리고 **점수대별 승률**을 보여줍니다.
+  - 이 기능의 핵심은 "얼마 벌었나"가 아니라 **점수가 높을수록 실제로 잘 맞는가**입니다.
+    점수대별 승률이 올라가지 않으면 그렇다고 화면에 그대로 적습니다.
+  - 진입은 신호가 뜬 봉의 **종가**(그 봉이 마감돼야 신호를 알 수 있으므로 현실적으로 가장 빠른 시점),
+    청산은 TP/SL 중 먼저 닿는 쪽입니다.
+  - ⚠️ **한 봉 안에서 TP와 SL이 모두 닿으면 불리한 쪽(손절)으로 처리합니다.** 봉 내부 순서를 알 수 없는데
+    유리한 쪽으로 처리하면 백테스트가 실제보다 좋아 보이게 되며, 그것이 가장 위험한 오류이기 때문입니다.
+  - ⚠️ 데모 데이터로는 백테스트를 **거부합니다**. 합성 데이터로 낸 성적은 아무 의미가 없습니다.
 - **기관급 매수/매도 점수 대시보드**: 원본 Pine Script의 22점 만점 스코어링, TP/SL 자동계산, 강한매수/매수/매도/강한매도 라벨을 그대로 재현
 - **Range Filter + Fibonacci BB**: 토글로 켜고 끌 수 있는 보조 오버레이
 - **캔들스틱 패턴 자동 탐지**: 도지·해머·행잉맨·슈팅스타·장악형·관통형·흑운형·모닝스타·이브닝스타·적삼병·흑삼병
@@ -115,6 +132,8 @@ backend/
   toss_openapi.py           토스증권 공식 Open API (OAuth2 client_credentials, /api/v1/candles)
   indicators.py             EMA/RMA/SMA/RSI/MACD/Stoch/ADX/VWAP/OBV/BB 등 지표 (numpy)
   scoring.py                기관급 매수/매도 점수 엔진 (institutional_btc_eth_signals.pine 이식)
+  screener.py               여러 종목 일괄 스캔 (동시 실행 제한 + 데모 종목 제외)
+  backtest.py               과거 성적 검증 (한 봉 내 TP/SL 동시 터치는 손절 처리)
   range_filter_fbb.py       Range Filter + Fibonacci BB (range_filter_fibonacci_bb.pine 이식)
   db.py                     SQLite (커스텀 패턴 / 관심종목 저장)
   patterns/
@@ -134,6 +153,8 @@ data/                       SQLite DB 파일 위치 (git 제외)
 - `GET /api/diag?market=&symbol=&interval=` — 데이터 소스별 연결 진단
 - `GET /api/candles?market=&symbol=&interval=&limit=` — OHLCV 캔들
 - `GET /api/analysis?market=&symbol=&interval=&limit=` — 지표/점수/패턴 탐지 전체 결과
+- `GET /api/screener?scope=&interval=&direction=&min_score=` — 여러 종목 일괄 스캔, 점수순 정렬
+- `GET /api/backtest?market=&symbol=&interval=&min_score=&max_bars=&fee_pct=` — 과거 성적 검증
 - `GET/POST/DELETE /api/patterns/custom` — 사용자 정의 패턴 CRUD (`/rule`, `/shape` 하위 경로)
 - `GET/POST/DELETE /api/watchlist` — 관심종목
 
@@ -143,3 +164,6 @@ data/                       SQLite DB 파일 위치 (git 제외)
   자잘한 등락이 잦은 경우)에서는 후보가 다소 많이 잡힐 수 있습니다 — 신뢰도(confidence) 점수로 우선순위를 매겨 표시합니다.
 - 토스증권 API는 비공식이라 향후 응답 스펙이 바뀌면 조정이 필요할 수 있습니다.
 - 실시간(웹소켓) 시세는 지원하지 않고, 새로고침 시점 기준 스냅샷을 가져옵니다.
+- 백테스트는 수수료·슬리피지를 **비율로만** 반영합니다. 실제 체결가·호가 공백·부분체결은 반영하지 않으므로
+  실전 성적은 이보다 나쁠 가능성이 높습니다. 한 번에 한 포지션만 잡는 단순 모델이며,
+  **과거 성과가 미래를 보장하지 않습니다.**

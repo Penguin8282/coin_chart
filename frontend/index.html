@@ -35,6 +35,14 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2.4"/><circle cx="15" cy="12" r="2.4"/><circle cx="7" cy="18" r="2.4"/></svg>
         신호 장부
       </button>
+      <button class="nav-item" data-view="screener">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+        스크리너
+      </button>
+      <button class="nav-item" data-view="backtest">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18L9 12l4 3 7-8"/><path d="M20 7h-4M20 7v4"/></svg>
+        백테스트
+      </button>
       <button class="nav-item" data-view="settings">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2.4"/><circle cx="10" cy="16" r="2.4"/></svg>
         표시 설정
@@ -265,6 +273,125 @@
             </article>
           </div>
         </div>
+      </section>
+
+      <!-- ─────────── 스크리너 ─────────── -->
+      <section class="view" data-view="screener">
+        <div class="ledger-head">
+          <div>
+            <p class="eyebrow">SCREENER</p>
+            <h1>지금 신호가 뜬 종목</h1>
+          </div>
+          <span class="regime-pill" id="scrMeta">—</span>
+        </div>
+
+        <article class="card">
+          <header class="card-head"><div>
+            <p class="eyebrow">조건</p>
+            <h2>무엇을 훑을지</h2>
+          </div></header>
+          <div class="filter-grid">
+            <div class="field">
+              <label for="scrScope">범위</label>
+              <select id="scrScope">
+                <option value="watchlist">관심종목</option>
+                <option value="crypto">코인 전체</option>
+                <option value="kr">국내주식 전체</option>
+                <option value="us">해외주식 전체</option>
+                <option value="all">전부</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="scrInterval">시간 단위</label>
+              <select id="scrInterval">
+                <option value="15m">15분</option>
+                <option value="1h" selected>1시간</option>
+                <option value="4h">4시간</option>
+                <option value="1d">1일</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="scrDirection">방향</label>
+              <select id="scrDirection">
+                <option value="any">매수 + 매도</option>
+                <option value="buy">매수만</option>
+                <option value="sell">매도만</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="scrMinScore">최소 점수</label>
+              <select id="scrMinScore">
+                <option value="0">전체</option>
+                <option value="5" selected>5점 이상</option>
+                <option value="7">7점 이상</option>
+                <option value="10">10점 이상</option>
+              </select>
+            </div>
+            <div class="field field-end">
+              <button id="scrRunBtn" class="primary-btn">스캔 실행</button>
+            </div>
+          </div>
+          <p class="fine" id="scrHint">한 번에 최대 40종목까지 훑습니다. 시세를 못 가져온 종목은 점수가 무의미하므로 결과에서 제외합니다.</p>
+        </article>
+
+        <article class="card">
+          <header class="card-head">
+            <div><p class="eyebrow">결과</p><h2 id="scrCount">스캔을 실행하세요</h2></div>
+          </header>
+          <div class="table-wrap"><table id="scrTable"></table></div>
+          <div id="scrSkipped"></div>
+        </article>
+      </section>
+
+      <!-- ─────────── 백테스트 ─────────── -->
+      <section class="view" data-view="backtest">
+        <div class="ledger-head">
+          <div>
+            <p class="eyebrow">BACKTEST <span class="sep">/</span> <span id="btSymbol">—</span></p>
+            <h1>이 신호를 따랐다면</h1>
+          </div>
+          <span class="regime-pill" id="btMeta">—</span>
+        </div>
+
+        <article class="card">
+          <header class="card-head"><div>
+            <p class="eyebrow">조건</p>
+            <h2>어떻게 검증할지</h2>
+          </div></header>
+          <div class="filter-grid">
+            <div class="field">
+              <label for="btMinScore">진입 기준 점수</label>
+              <select id="btMinScore">
+                <option value="5">5점 이상</option>
+                <option value="7" selected>7점 이상</option>
+                <option value="10">10점 이상</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="btMaxBars">최대 보유 봉</label>
+              <select id="btMaxBars">
+                <option value="24">24봉</option>
+                <option value="48" selected>48봉</option>
+                <option value="96">96봉</option>
+              </select>
+            </div>
+            <div class="field">
+              <label for="btFee">왕복 수수료 <span class="field-hint">슬리피지 포함</span></label>
+              <select id="btFee">
+                <option value="0">0%</option>
+                <option value="0.1" selected>0.1%</option>
+                <option value="0.25">0.25%</option>
+                <option value="0.5">0.5%</option>
+              </select>
+            </div>
+            <div class="field field-end">
+              <button id="btRunBtn" class="primary-btn">백테스트 실행</button>
+            </div>
+          </div>
+          <p class="fine">현재 선택된 종목·시간단위로 계산합니다. 종목을 바꾸려면 표시 설정이나 관심종목에서 먼저 전환하세요.</p>
+        </article>
+
+        <div id="btResult"></div>
       </section>
 
       <!-- ─────────── 표시 설정 ─────────── -->

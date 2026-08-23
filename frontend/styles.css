@@ -769,3 +769,48 @@ select:hover, input:hover { border-color: var(--border-2); }
 .param-row input { width: 110px; text-align: right; font-family: var(--mono); }
 .param-actions { display: flex; gap: 8px; }
 .param-actions .ghost-btn, .param-actions .primary-btn { flex: 1; margin: 0; }
+
+/* ══════════════ 스크리너 · 백테스트 ══════════════ */
+.filter-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px; align-items: end;
+}
+.field-end { justify-content: flex-end; }
+.field-end .primary-btn { width: 100%; }
+
+.table-wrap { overflow-x: auto; }
+table.data { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.data th {
+  text-align: left; font-weight: 500; color: var(--ink-3);
+  font-size: 10px; letter-spacing: .08em; text-transform: uppercase;
+  padding: 0 10px var(--row-pad); white-space: nowrap;
+}
+table.data td { padding: var(--row-pad) 10px; border-top: 1px solid var(--border); white-space: nowrap; }
+table.data td.num, table.data th.num { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+table.data tbody tr { cursor: pointer; }
+table.data tbody tr:hover { background: var(--surface-2); }
+table.data .sym { font-weight: 600; }
+table.data .mk { color: var(--ink-3); font-size: 10.5px; }
+.up { color: var(--bull); } .dn { color: var(--bear); }
+.score-cell { font-weight: 600; }
+
+.skip-note {
+  margin-top: 10px; padding: 10px 12px; border-radius: var(--r-sm); font-size: 11.5px; line-height: 1.6;
+  background: color-mix(in srgb, var(--warn) 9%, transparent);
+  border: 1px solid color-mix(in srgb, var(--warn) 26%, transparent); color: var(--warn);
+}
+.empty-state { text-align: center; padding: 34px 0; color: var(--ink-3); font-size: 12.5px; }
+
+/* 수익 곡선 카드는 옆 칼럼 높이에 맞춰 늘어나지 않게 한다.
+   억지로 늘리면 몇 %짜리 움직임이 산맥처럼 보여 성과가 과장된다. */
+.equity-card { align-self: start; }
+.equity-plot { position: relative; height: clamp(240px, 32vh, 380px); }
+#equityCanvas { position: absolute; inset: 0; width: 100%; height: 100%; }
+.verdict-line {
+  padding: 12px 14px; border-radius: var(--r-sm); font-size: 12.5px; line-height: 1.6;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  border: 1px solid color-mix(in srgb, var(--accent) 26%, transparent); color: var(--accent);
+}
+.trade-row-tp { color: var(--bull); }
+.trade-row-sl { color: var(--bear); }
+.trade-row-timeout { color: var(--ink-3); }

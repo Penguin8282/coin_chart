@@ -25,6 +25,8 @@ from .patterns.custom_engine import (
     validate_rule_definition, scan_rule_pattern, make_shape_template, scan_shape_pattern,
 )
 from .indicators import atr as atr_fn
+from .screener import resolve_targets, run_screen, MAX_TARGETS
+from .backtest import run_backtest
 from .models import RulePatternCreate, ShapePatternCreate, WatchlistItem
 
 app = FastAPI(title="개인 차트 분석 시스템")
@@ -186,6 +188,58 @@ def diag(market: str = "crypto", symbol: str = "BTCUSDT", interval: str = "1h"):
         "market": market, "symbol": symbol, "interval": interval,
         "results": probe_providers(market, symbol, interval),
     })
+
+
+@app.get("/api/screener")
+def screener(scope: str = "watchlist", interval: str = "1h", limit: int = 300,
+             exchange: str | None = None, min_score: int = 0, direction: str = "any",
+             vol_len: int = 20, fib_len: int = 100, adx_thr: float = 25.0):
+    """여러 종목을 한 번에 훑어 신호 점수순으로 돌려준다."""
+    if scope not in ("watchlist", "crypto", "us", "kr", "all"):
+        raise HTTPException(400, "scope는 watchlist|crypto|us|kr|all 중 하나여야 합니다")
+    if direction not in ("any", "buy", "sell"):
+        raise HTTPException(400, "direction은 any|buy|sell 중 하나여야 합니다")
+
+    targets = resolve_targets(scope, db.list_watchlist())
+    result = run_screen(
+        targets, interval=interval, limit=max(120, min(limit, 600)), exchange=exchange,
+        params={"vol_len": vol_len, "fib_len": fib_len, "adx_thr": adx_thr},
+        min_score=max(0, min(min_score, 22)), direction=direction,
+    )
+    result["scope"] = scope
+    result["max_targets"] = MAX_TARGETS
+    return _clean(result)
+
+
+@app.get("/api/backtest")
+def backtest(market: str, symbol: str, interval: str = "1h", limit: int = 600,
+             exchange: str | None = None, min_score: int = 7, max_bars: int = 48,
+             fee_pct: float = 0.1, vol_len: int = 20, fib_len: int = 100,
+             adx_thr: float = 25.0):
+    """이 신호를 그대로 따랐다면 어땠을지 과거 데이터로 계산한다."""
+    if market not in ("crypto", "us", "kr"):
+        raise HTTPException(400, "market은 crypto|us|kr 중 하나여야 합니다")
+
+    fetched = get_candles(market, symbol, interval, max(200, min(limit, 1000)), exchange=exchange)
+    rows = fetched["candles"]
+    if fetched["source"] == "demo":
+        raise HTTPException(422, "실시간 시세를 가져오지 못해 백테스트를 할 수 없습니다. "
+                                 "데모 데이터로 계산한 성적은 아무 의미가 없습니다.")
+
+    o, h, l, c, v = _ohlcv_arrays(rows)
+    times = [r["t"] for r in rows]
+    result = run_backtest(
+        o, h, l, c, v, times,
+        min_score=max(1, min(min_score, 22)), max_bars=max(4, min(max_bars, 240)),
+        fee_pct=max(0.0, min(fee_pct, 2.0)),
+        vol_len=vol_len, fib_len=fib_len, adx_thr=adx_thr,
+    )
+    if "error" in result:
+        raise HTTPException(422, result["error"])
+    result.update(market=market, symbol=symbol, interval=interval,
+                  source=fetched["source"], currency=fetched.get("currency", "USD"),
+                  candles=len(rows))
+    return _clean(result)
 
 
 # ── 사용자 정의 패턴 ──────────────────────────────────────────────────────

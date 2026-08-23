@@ -1069,6 +1069,9 @@ function switchView(name) {
   document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.view === name));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.dataset.view === name));
   $("ledgerSymbol").textContent = state.symbol;
+  if (name === "backtest" && $("btSymbol").textContent === "—") {
+    $("btSymbol").textContent = `${state.symbol} · ${TF_LABEL[state.interval] || state.interval}`;
+  }
   if (state.data) requestAnimationFrame(renderAll);
 }
 document.querySelectorAll("[data-view]").forEach(btn => {
@@ -1371,6 +1374,8 @@ window.addEventListener("resize", () => {
   resizeTimer = setTimeout(() => { if (state.data) renderAll(); }, 120);
 });
 
+let canvasObserver = null;
+
 /* 캔버스는 카드 높이에 따라 늘어나므로, 실제 크기가 바뀔 때마다 다시 그린다.
    (비트맵만 늘어나 그림이 찌그러지는 것을 막는다) */
 if (window.ResizeObserver) {
@@ -1387,11 +1392,258 @@ if (window.ResizeObserver) {
       (redraw[canvas.dataset.redraw] || (() => {}))();
     }
   });
+  redraw.equity = () => drawEquity(state.btEquity);
   el.evidence.dataset.redraw = "evidence";
   el.chart.dataset.redraw = "chart";
   ro.observe(el.evidence);
   ro.observe(el.chart);
+  canvasObserver = ro;
 }
+
+/* ══════════════════ 스크리너 ══════════════════ */
+const SIGNAL_TEXT = {
+  strong_buy: ["적극 매수", "bull"], normal_buy: ["매수 우위", "bull"],
+  strong_sell: ["적극 매도", "bear"], normal_sell: ["매도 우위", "bear"],
+  sideways: ["횡보", ""], monitor: ["관망", ""],
+};
+const MK = { crypto: "코인", us: "해외", kr: "국내" };
+
+function fmtNum(v, cur) {
+  if (v == null) return "—";
+  const a = Math.abs(v);
+  if (cur === "KRW") return v.toLocaleString("ko-KR", { maximumFractionDigits: a >= 100 ? 0 : 2 });
+  return v.toLocaleString("ko-KR", { maximumFractionDigits: a >= 1000 ? 2 : a >= 1 ? 3 : 6 });
+}
+function signed(v) {
+  if (v == null) return "—";
+  return `<span class="${v >= 0 ? "up" : "dn"}">${v >= 0 ? "+" : "-"}${Math.abs(v).toFixed(2)}%</span>`;
+}
+
+async function runScreener() {
+  const btn = $("scrRunBtn");
+  btn.disabled = true; btn.textContent = "스캔 중…";
+  $("scrCount").textContent = "훑는 중…";
+  $("scrTable").innerHTML = "";
+  $("scrSkipped").innerHTML = "";
+  try {
+    const p = state.params;
+    const qs = `scope=${$("scrScope").value}&interval=${$("scrInterval").value}` +
+               `&direction=${$("scrDirection").value}&min_score=${$("scrMinScore").value}` +
+               `&exchange=${encodeURIComponent(state.exchange)}` +
+               `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}`;
+    const res = await api(`/screener?${qs}`);
+    renderScreener(res);
+  } catch (e) {
+    $("scrCount").textContent = "스캔 실패";
+    $("scrSkipped").innerHTML = `<div class="skip-note">${e.message}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = "스캔 실행";
+  }
+}
+
+function renderScreener(res) {
+  $("scrMeta").textContent = `${res.scanned}종목 · ${(res.elapsed_ms / 1000).toFixed(1)}초`;
+  $("scrCount").textContent = res.rows.length ? `${res.rows.length}종목` : "조건에 맞는 종목 없음";
+
+  if (!res.rows.length) {
+    $("scrTable").innerHTML = "";
+    $("scrTable").insertAdjacentHTML("afterend", "");
+    $("scrSkipped").innerHTML = `<div class="empty-state">조건을 만족하는 종목이 없습니다.<br>최소 점수를 낮추거나 범위를 넓혀보세요.</div>`;
+  } else {
+    $("scrTable").className = "data";
+    $("scrTable").innerHTML = `
+      <thead><tr>
+        <th>종목</th><th class="num">현재가</th><th class="num">등락</th>
+        <th class="num">매수</th><th class="num">매도</th>
+        <th class="num">RSI</th><th class="num">ADX</th><th>판정</th>
+      </tr></thead>
+      <tbody>${res.rows.map(r => {
+        const [label, tone] = SIGNAL_TEXT[r.signal] || ["—", ""];
+        return `<tr data-market="${r.market}" data-symbol="${r.symbol}">
+          <td><span class="sym">${r.symbol}</span>
+            <span class="mk">${MK[r.market] || r.market} · ${symbolDisplayName(r.market, r.symbol)}${r.whale ? " · 고래" : ""}</span></td>
+          <td class="num">${fmtNum(r.price, r.currency)}</td>
+          <td class="num">${signed(r.change_pct)}</td>
+          <td class="num score-cell" style="color:var(--bull)">${r.buy_score}</td>
+          <td class="num score-cell" style="color:var(--bear)">${r.sell_score}</td>
+          <td class="num">${r.rsi}</td>
+          <td class="num">${r.adx}${r.strong_trend ? " 🔥" : ""}</td>
+          <td><span class="regime-pill ${tone}">${label}</span></td>
+        </tr>`;
+      }).join("")}</tbody>`;
+
+    // 행을 누르면 그 종목으로 전환
+    $("scrTable").querySelectorAll("tbody tr").forEach(tr => {
+      tr.addEventListener("click", () => {
+        const { market, symbol } = tr.dataset;
+        el.market.value = market; state.market = market;
+        populateSymbolSelect(); updateExchangeField();
+        el.custom.value = symbol;
+        if ([...el.symbol.options].some(o => o.value === symbol)) el.symbol.value = symbol;
+        state.interval = $("scrInterval").value;
+        el.interval.value = state.interval; syncSegmented();
+        switchView("overview");
+        loadAnalysis();
+      });
+    });
+
+    if (res.skipped.length) {
+      $("scrSkipped").innerHTML = `<div class="skip-note">${res.note} —
+        ${res.skipped.slice(0, 6).map(s => s.symbol).join(", ")}${res.skipped.length > 6 ? " 외" : ""}</div>`;
+    }
+  }
+}
+$("scrRunBtn").addEventListener("click", runScreener);
+
+/* ══════════════════ 백테스트 ══════════════════ */
+async function runBacktest() {
+  const btn = $("btRunBtn");
+  btn.disabled = true; btn.textContent = "계산 중…";
+  $("btResult").innerHTML = `<div class="card"><div class="empty-state">과거 데이터로 계산하고 있습니다…</div></div>`;
+  try {
+    const p = state.params;
+    const qs = `market=${state.market}&symbol=${encodeURIComponent(state.symbol)}` +
+               `&interval=${state.interval}&exchange=${encodeURIComponent(state.exchange)}` +
+               `&min_score=${$("btMinScore").value}&max_bars=${$("btMaxBars").value}` +
+               `&fee_pct=${$("btFee").value}` +
+               `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}`;
+    const res = await api(`/backtest?${qs}`);
+    renderBacktest(res);
+  } catch (e) {
+    $("btResult").innerHTML = `<div class="card"><div class="skip-note">${e.message}</div></div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = "백테스트 실행";
+  }
+}
+
+function renderBacktest(res) {
+  $("btSymbol").textContent = `${res.symbol} · ${TF_LABEL[res.interval] || res.interval}`;
+  $("btMeta").textContent = `${res.candles}봉 · ${SOURCE_LABEL[res.source] || res.source}`;
+  const s = res.summary;
+
+  if (!s.count) {
+    $("btResult").innerHTML = `<div class="card"><div class="empty-state">${res.note || "거래가 발생하지 않았습니다."}</div></div>`;
+    return;
+  }
+
+  const tiles = [
+    ["승률", `${s.win_rate}%`, `${s.wins}승 ${s.losses}패`, s.win_rate >= 50 ? "bull" : "bear"],
+    ["평균 손익비", s.payoff, `평균이익 ${s.avg_win}% / 손실 ${s.avg_loss}%`, s.payoff >= 1 ? "bull" : "bear"],
+    ["최대 낙폭", `${s.mdd}%`, "MDD", "bear"],
+    ["총 수익률", `${s.total_return >= 0 ? "+" : ""}${s.total_return}%`, `${s.count}거래 · 수수료 반영`,
+      s.total_return >= 0 ? "bull" : "bear"],
+  ];
+
+  $("btResult").innerHTML = `
+    <div class="tile-row">${tiles.map(([l, v, n, tone]) => `
+      <div class="tile" style="--tile-tone:var(--${tone})">
+        <div><p class="tile-label">${l}</p><p class="tile-value">${v}</p></div>
+        <p class="tile-note">${n}</p>
+      </div>`).join("")}</div>
+
+    <div class="overview-grid">
+      <article class="card equity-card">
+        <header class="card-head"><div>
+          <p class="eyebrow">EQUITY CURVE</p><h2>누적 수익 곡선</h2>
+          <p class="card-sub">100에서 시작해 거래마다 복리로 누적한 값입니다.</p></div>
+          <span class="regime-pill ${s.total_return >= 0 ? "bull" : "bear"}">${s.total_return >= 0 ? "+" : ""}${s.total_return}%</span>
+        </header>
+        <div class="equity-plot"><canvas id="equityCanvas"></canvas></div>
+      </article>
+
+      <div class="overview-side">
+        <article class="card">
+          <header class="card-head"><div>
+            <p class="eyebrow">점수대별 성적</p><h2>점수가 맞는가</h2></div></header>
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>점수</th><th class="num">거래</th><th class="num">승률</th><th class="num">평균</th></tr></thead>
+            <tbody>${res.by_score.map(b => `
+              <tr><td><b>${b.label}</b></td><td class="num">${b.count}</td>
+                <td class="num">${b.win_rate}%</td>
+                <td class="num ${b.avg_pnl >= 0 ? "up" : "dn"}">${b.avg_pnl >= 0 ? "+" : ""}${b.avg_pnl}%</td></tr>`).join("")}
+            </tbody></table></div>
+          ${res.verdict ? `<div class="verdict-line">${res.verdict}</div>` : ""}
+        </article>
+
+        <article class="card">
+          <header class="card-head"><div><p class="eyebrow">최근 거래</p><h2>${Math.min(res.trades.length, 12)}건</h2></div></header>
+          <div class="table-wrap"><table class="data">
+            <thead><tr><th>진입</th><th>방향</th><th class="num">점수</th><th>청산</th><th class="num">손익</th></tr></thead>
+            <tbody>${res.trades.slice(-12).reverse().map(t => `
+              <tr><td class="mono" style="font-size:11px">${fmtTime(t.entry_time, res.interval)}</td>
+                <td><span class="regime-pill ${t.direction === "buy" ? "bull" : "bear"}">${t.direction === "buy" ? "매수" : "매도"}</span></td>
+                <td class="num">${t.score}</td>
+                <td class="trade-row-${t.exit_reason}">${{ tp: "익절", sl: "손절", timeout: "시간종료" }[t.exit_reason]}</td>
+                <td class="num ${t.pnl_pct >= 0 ? "up" : "dn"}">${t.pnl_pct >= 0 ? "+" : ""}${t.pnl_pct}%</td></tr>`).join("")}
+            </tbody></table></div>
+        </article>
+      </div>
+    </div>
+
+    <div class="card"><p class="fine">
+      진입은 신호가 뜬 봉의 종가, 청산은 TP·SL 중 먼저 닿는 쪽입니다.
+      한 봉 안에서 둘 다 닿는 경우 봉 내부 순서를 알 수 없으므로 불리한 쪽(손절)으로 처리했습니다 —
+      결과가 실제보다 좋아 보이지 않게 하기 위해서입니다.
+      과거 성과가 미래를 보장하지 않으며, 실제 체결가와는 차이가 납니다.
+    </p></div>`;
+
+  state.btEquity = res.equity;
+  requestAnimationFrame(() => {
+    drawEquity(res.equity);
+    // 카드가 옆 칼럼 높이에 맞춰 늘어나므로, 새로 만든 캔버스도 관찰 대상에 넣는다
+    const canvas = $("equityCanvas");
+    if (canvas && canvasObserver) {
+      canvas.dataset.redraw = "equity";
+      canvasObserver.observe(canvas);
+    }
+  });
+}
+
+function drawEquity(points) {
+  const canvas = $("equityCanvas");
+  if (!canvas || !points || points.length < 2) return;
+  fitCanvas(canvas);
+  const cx = canvas.getContext("2d");
+  paint(cx, canvas, () => {
+    const w = canvas.clientWidth, h = canvas.clientHeight;
+    const m = { t: 14, r: 58, b: 22, l: 8 };
+    const vals = points.map(p => p.value);
+    const lo = Math.min(100, ...vals), hi = Math.max(100, ...vals);
+    const pad = (hi - lo) * 0.12 || 1;
+    const LO = lo - pad, HI = hi + pad;
+    const X = i => m.l + (i / (points.length - 1)) * (w - m.l - m.r);
+    const Y = v => m.t + (1 - (v - LO) / (HI - LO || 1)) * (h - m.t - m.b);
+
+    cx.font = "10px 'IBM Plex Mono', monospace";
+    for (let g = 0; g <= 4; g++) {
+      const v = LO + (HI - LO) * (g / 4), y = Y(v);
+      cx.strokeStyle = C.gridLine; cx.lineWidth = 1; cx.setLineDash([2, 4]);
+      cx.beginPath(); cx.moveTo(m.l, y); cx.lineTo(w - m.r, y); cx.stroke();
+      cx.setLineDash([]);
+      cx.fillStyle = C.ink3; cx.fillText(v.toFixed(1), w - m.r + 8, y + 3);
+    }
+    // 원금(100) 기준선 — 이 위면 벌었고 아래면 잃었다
+    cx.strokeStyle = C.ink3; cx.lineWidth = 1; cx.setLineDash([4, 3]);
+    cx.beginPath(); cx.moveTo(m.l, Y(100)); cx.lineTo(w - m.r, Y(100)); cx.stroke();
+    cx.setLineDash([]);
+
+    const last = points[points.length - 1].value;
+    const col = last >= 100 ? C.bull : C.bear;
+    cx.beginPath();
+    points.forEach((p, i) => { const x = X(i), y = Y(p.value); i ? cx.lineTo(x, y) : cx.moveTo(x, y); });
+    cx.lineTo(X(points.length - 1), Y(LO)); cx.lineTo(X(0), Y(LO)); cx.closePath();
+    const g = cx.createLinearGradient(0, m.t, 0, h - m.b);
+    g.addColorStop(0, hexA(col, 0.28)); g.addColorStop(1, hexA(col, 0));
+    cx.fillStyle = g; cx.fill();
+
+    cx.strokeStyle = col; cx.lineWidth = 2; cx.lineJoin = "round"; cx.beginPath();
+    points.forEach((p, i) => { const x = X(i), y = Y(p.value); i ? cx.lineTo(x, y) : cx.moveTo(x, y); });
+    cx.stroke();
+    cx.fillStyle = col;
+    cx.beginPath(); cx.arc(X(points.length - 1), Y(last), 3.5, 0, Math.PI * 2); cx.fill();
+  });
+}
+$("btRunBtn").addEventListener("click", runBacktest);
 
 /* ══════════════════ 테마 · 밀도 · 지표 파라미터 ══════════════════ */
 function applyTheme(theme) {
