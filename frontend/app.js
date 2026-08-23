@@ -189,8 +189,21 @@ function goToSymbol(market, symbol, opts = {}) {
   updateExchangeField();
   syncSegmented();
   syncSymbolButton();
+  invalidateBacktest();
   if (opts.view) switchView(opts.view);
   loadAnalysis();
+}
+
+/* 종목이나 시간 단위가 바뀌면 화면에 떠 있는 백테스트 결과는 남의 것이 된다.
+   조용히 놔두면 다른 종목 성적을 이 종목 성적으로 읽게 되므로 치우고 다시
+   실행하라고 알린다. */
+function invalidateBacktest() {
+  if (!state.btFor) return;
+  if (state.btFor.symbol === state.symbol && state.btFor.interval === state.interval) return;
+  state.btFor = null;
+  $("btSymbol").textContent = `${state.symbol} · ${TF_LABEL[state.interval] || state.interval}`;
+  $("btResult").innerHTML = `<div class="card"><div class="empty-state">
+    종목이 바뀌었습니다. <b>${state.symbol}</b> 로 다시 실행해주세요.</div></div>`;
 }
 
 function symbolDisplayName(market, symbol) {
@@ -317,11 +330,25 @@ function paint(context, canvas, fn) {
 
 function renderAll() {
   if (!state.data) return;
+  syncSymbolLabels();
   [el.chart, el.vol, el.evidence, el.spark, el.obsSpark].forEach(fitCanvas);
   renderOverview();
   drawChart();
   drawVolume();
   renderPatternList();
+}
+
+/* 종목 이름이 걸리는 곳을 한 군데서 맞춘다.
+   예전에는 switchView 에서만 갱신해서, 화면을 옮기지 않고 종목만 바꾸면
+   신호 장부 제목이 이전 종목 이름을 그대로 달고 있었다. */
+function syncSymbolLabels() {
+  syncSymbolButton();
+  $("ledgerSymbol").textContent = state.symbol;
+  // 백테스트 이름표는 '지금 화면에 뜬 결과'의 종목이다. 결과가 있는 동안에는
+  // 건드리지 않는다 — 안 그러면 BTC로 낸 성적 위에 ETH라고 써 붙이게 된다.
+  if (!state.btFor) {
+    $("btSymbol").textContent = `${state.symbol} · ${TF_LABEL[state.interval] || state.interval}`;
+  }
 }
 
 function line(context, pts, color, width = 1.4, dash = []) {
@@ -1162,13 +1189,19 @@ function renderPicker() {
   box.querySelector(".picker-row.cursor")?.scrollIntoView({ block: "nearest" });
 }
 
-/* Enter — 그 종목을 바로 열어준다 */
+/* 종목 하나를 놓고 보는 화면들 — 여기서 종목을 바꾸면 그 화면에 머물러야 한다 */
+const SYMBOL_VIEWS = ["overview", "ledger", "backtest"];
+
+/* Enter — 그 종목을 바로 열어준다.
+   신호 장부를 보다가 종목을 골랐는데 개요로 튕겨 나가면, 보던 것을 다시
+   찾아 들어가야 한다. 종목 화면에 있었다면 그 화면에 그대로 둔다. */
 function choosePicker(i) {
   const rows = pickerRows();
   const p = rows[i];
   if (!p) return;
   closePicker();
-  goToSymbol(p.market, p.symbol, { view: "overview" });
+  const stay = SYMBOL_VIEWS.includes(state.activeView);
+  goToSymbol(p.market, p.symbol, stay ? {} : { view: "overview" });
 }
 
 /* Ctrl+Enter 또는 ★ — 관심종목에 담고 팔레트는 열어둔다 */
@@ -1292,10 +1325,7 @@ function switchView(name) {
   state.activeView = name;
   document.querySelectorAll(".nav-item").forEach(b => b.classList.toggle("active", b.dataset.view === name));
   document.querySelectorAll(".view").forEach(v => v.classList.toggle("active", v.dataset.view === name));
-  $("ledgerSymbol").textContent = state.symbol;
-  if (name === "backtest" && $("btSymbol").textContent === "—") {
-    $("btSymbol").textContent = `${state.symbol} · ${TF_LABEL[state.interval] || state.interval}`;
-  }
+  syncSymbolLabels();
   if (state.data) requestAnimationFrame(renderAll);
 }
 document.querySelectorAll("[data-view]").forEach(btn => {
@@ -1325,6 +1355,7 @@ document.querySelectorAll("#tfSegmented button").forEach(btn => {
     if (state.interval === btn.dataset.tf) return;
     state.interval = btn.dataset.tf;
     syncSegmented();
+    invalidateBacktest();
     loadAnalysis();
   });
 });
@@ -1781,6 +1812,7 @@ function renderBacktest(res) {
   $("btMeta").textContent = `${res.candles}봉 · ${SOURCE_LABEL[res.source] || res.source}`;
   const s = res.summary;
 
+  state.btFor = { symbol: res.symbol, interval: res.interval };
   if (!s.count) {
     $("btResult").innerHTML = `<div class="card"><div class="empty-state">${res.note || "거래가 발생하지 않았습니다."}</div></div>`;
     return;
@@ -1848,6 +1880,7 @@ function renderBacktest(res) {
     </p></div>`;
 
   state.btEquity = res.equity;
+  state.btFor = { symbol: res.symbol, interval: res.interval };
   requestAnimationFrame(() => {
     drawEquity(res.equity);
     // 카드가 옆 칼럼 높이에 맞춰 늘어나므로, 새로 만든 캔버스도 관찰 대상에 넣는다
