@@ -644,15 +644,54 @@ function drawChart() {
     drawCandles(sc, d.candles);
 
     const markers = [];
-    if (state.toggles.chartPat) drawChartPatterns(sc, d.chart_patterns, markers);
+    // 라벨 자리를 한 군데서 관리해야 서로 겹치지 않는다
+    const place = makeLabelPlacer(sc.rect);
+    // 점수 화살표와 캔들패턴 표식은 특정 봉에 붙어 있어 비켜줄 수 없다.
+    // 그래서 그 자리를 먼저 맡아두고, 움직일 수 있는 패턴 라벨이 피해 가게 한다.
+    reserveFixedMarks(sc, d, place);
+    if (state.toggles.customPat) drawCustomMatches(sc, d.custom_matches, markers, place);
+    if (state.toggles.chartPat) drawChartPatterns(sc, d.chart_patterns, markers, place);
     if (state.toggles.candlePat) drawCandlePatterns(sc, d.candle_patterns, markers);
-    if (state.toggles.customPat) drawCustomMatches(sc, d.custom_matches, markers);
     drawScoreMarkers(sc, d.events, d.series, markers);
+    // 이름을 생략한 게 있으면 숨기지 말고 몇 개인지 알린다
+    const hidden = place.dropped();
+    if (hidden) {
+      ctx.font = "10px 'IBM Plex Sans KR', sans-serif";
+      ctx.textAlign = "right"; ctx.textBaseline = "alphabetic";
+      ctx.fillStyle = C.ink3;
+      ctx.fillText(`이름 생략 ${hidden}개 · 오른쪽 목록에서 확인`, sc.rect.x1 - 2, sc.rect.y0 - 4);
+      ctx.textAlign = "left";
+    }
     state.markersCache = markers;
 
     drawSelection(sc);
     drawCrosshair(sc);
   });
+}
+
+/* 움직일 수 없는 표식들이 차지한 자리를 라벨 배치기에 미리 알려준다 */
+function reserveFixedMarks(sc, d, place) {
+  const end = sc.start + sc.count;
+  if (state.toggles.candlePat) {
+    for (const p of d.candle_patterns || []) {
+      if (p.index < sc.start || p.index >= end) continue;
+      const cd = d.candles[p.index], x = sc.xOf(p.index);
+      const y = p.direction === "bearish" ? sc.yOf(cd.h) - 9 : sc.yOf(cd.l) + 9;
+      place.reserve(x - 6, y - 8, x + 6, y + 8);
+    }
+  }
+  const ev = d.events, S = d.series;
+  for (let i = sc.start; i < end; i++) {
+    const cd = d.candles[i]; if (!cd) continue;
+    if (ev.strong_buy[i] || ev.normal_buy[i]) {
+      const y = sc.yOf(cd.l) + (ev.strong_buy[i] ? 22 : 15), x = sc.xOf(i);
+      place.reserve(x - 13, y - 8, x + 22, y + 8);
+    }
+    if (ev.strong_sell[i] || ev.normal_sell[i]) {
+      const y = sc.yOf(cd.h) - (ev.strong_sell[i] ? 22 : 15), x = sc.xOf(i);
+      place.reserve(x - 13, y - 8, x + 22, y + 8);
+    }
+  }
 }
 
 function shade(sc, i, color) {
@@ -696,11 +735,98 @@ function drawCandles(sc, candles) {
 
 const PAT_TONE = { bullish: C.bull, bearish: C.bear, neutral: "#A98BE0" };
 
-function drawChartPatterns(sc, patterns, markers) {
+/* ── 차트 위 라벨 배치 ──────────────────────────────────────────
+   예전에는 패턴마다 마지막 꼭짓점 옆에 글자를 바로 찍었다. 그런데 더블탑과
+   헤드앤숄더처럼 오른쪽 어깨를 공유하는 패턴들은 마지막 점이 거의 같아서
+   라벨이 정확히 겹쳐 읽을 수가 없었다.
+
+   그래서 이미 놓인 라벨과 부딪히면 위아래로 한 칸씩 비켜 놓고, 옮긴 만큼
+   가는 선을 그어 어느 지점의 이름인지 남긴다. 열네 번 시도해도 자리가
+   없으면 글자는 포기한다 — 겹쳐서 못 읽는 것보다 낫고, 점선과 툴팁은
+   그대로라 마우스를 올리면 이름을 볼 수 있다. */
+function makeLabelPlacer(rect) {
+  const boxes = [];
+  const PAD = 2.5, STEP = 13, H = 14;
+  // 라벨이 안 겹치더라도 스무 개가 깔리면 정작 캔들이 안 보인다.
+  // 폭에 맞춰 몇 개까지만 이름을 달고, 나머지는 점선과 툴팁으로 남긴다.
+  const MAX = Math.max(4, Math.round(rect.w / 135));
+  let used = 0;
+
+  place.reserve = (x0, y0, x1, y1) => boxes.push({ x0, y0, x1, y1 });
+  place.dropped = () => Math.max(0, used - MAX);
+
+  function place(text, ax, ay, color, always) {
+    if (!always) {
+      used++;
+      if (used > MAX) return false;
+    }
+    const tw = ctx.measureText(text).width;
+    const w = tw + 9;
+
+    // 기본은 앵커의 오른쪽 위. 오른쪽 끝을 넘으면 왼쪽으로 뒤집는다.
+    let x = ax + 6;
+    let flip = false;
+    if (x + w > rect.x1 - 2) { x = ax - 6 - w; flip = true; }
+    if (x < rect.x0 + 2) { x = rect.x0 + 2; flip = false; }
+
+    const baseY = ay - 8 - H;
+    for (let k = 0; k < 14; k++) {
+      const step = Math.ceil(k / 2);
+      const y = baseY + (k % 2 === 1 ? -1 : 1) * step * STEP;
+      if (y < rect.y0 + 2 || y + H > rect.y1 - 2) continue;
+
+      const box = { x0: x - PAD, y0: y - PAD, x1: x + w + PAD, y1: y + H + PAD };
+      const hit = boxes.some(b =>
+        box.x1 > b.x0 && box.x0 < b.x1 && box.y1 > b.y0 && box.y0 < b.y1);
+      if (hit) continue;
+      boxes.push(box);
+
+      ctx.save();
+      // 원래 자리에서 멀어졌으면 어디 것인지 선으로 이어준다
+      const cy = y + H / 2;
+      if (Math.abs(cy - ay) > 10) {
+        ctx.strokeStyle = hexA(color, 0.42); ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.moveTo(ax, ay);
+        ctx.lineTo(flip ? x + w : x, cy);
+        ctx.stroke();
+      }
+      // 캔들 위에 글자가 얹히면 안 읽히므로 옅은 판을 깐다
+      ctx.fillStyle = hexA(C.surface1, 0.82);
+      roundRect(ctx, x, y, w, H, 3); ctx.fill();
+      ctx.strokeStyle = hexA(color, 0.34); ctx.lineWidth = 1;
+      roundRect(ctx, x, y, w, H, 3); ctx.stroke();
+
+      ctx.fillStyle = color;
+      ctx.textBaseline = "middle";
+      ctx.fillText(text, x + 4.5, cy);
+      ctx.restore();
+      return true;
+    }
+    return false;   // 자리가 없으면 글자는 생략 (툴팁은 그대로)
+  }
+
+  return place;
+}
+
+function roundRect(c, x, y, w, h, r) {
+  c.beginPath();
+  c.moveTo(x + r, y);
+  c.arcTo(x + w, y, x + w, y + h, r);
+  c.arcTo(x + w, y + h, x, y + h, r);
+  c.arcTo(x, y + h, x, y, r);
+  c.arcTo(x, y, x + w, y, r);
+  c.closePath();
+}
+
+function drawChartPatterns(sc, patterns, markers, place) {
   const end = sc.start + sc.count;
   ctx.font = "10.5px 'IBM Plex Sans KR', sans-serif";
-  for (const p of patterns) {
-    if (p.end_idx < sc.start || p.start_idx > end) continue;
+  // 자리가 모자랄 때 신뢰도 높은 패턴이 먼저 이름을 갖도록 정렬한다
+  const visible = patterns
+    .filter(p => !(p.end_idx < sc.start || p.start_idx > end))
+    .sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
+  for (const p of visible) {
     const color = PAT_TONE[p.direction] || PAT_TONE.neutral;
     ctx.save();
     ctx.strokeStyle = hexA(color, 0.8); ctx.lineWidth = 1.3; ctx.setLineDash([4, 3]);
@@ -713,7 +839,7 @@ function drawChartPatterns(sc, patterns, markers) {
     }
     const lastPt = p.points[p.points.length - 1];
     const lx = sc.xOf(lastPt.idx), ly = sc.yOf(lastPt.price);
-    ctx.fillStyle = color; ctx.fillText(p.name_kr, lx + 6, ly - 6);
+    place(p.name_kr, lx, ly, color);
     markers.push({ x0: sc.xOf(p.start_idx) - 4, x1: lx + 4, y0: sc.rect.y0, y1: sc.rect.y1,
       tooltip: `${p.name_kr}\n신뢰도 ${fmtPct(p.confidence)}${p.target ? `\n목표가 ${fmtPrice(p.target)}` : ""}\n${p.note || ""}` });
   }
@@ -735,7 +861,7 @@ function drawCandlePatterns(sc, patterns, markers) {
   }
 }
 
-function drawCustomMatches(sc, matches, markers) {
+function drawCustomMatches(sc, matches, markers, place) {
   const end = sc.start + sc.count;
   ctx.font = "10.5px 'IBM Plex Sans KR', sans-serif";
   for (const m of matches) {
@@ -756,8 +882,7 @@ function drawCustomMatches(sc, matches, markers) {
       ctx.strokeStyle = hexA(color, 0.5); ctx.setLineDash([3, 3]); ctx.lineWidth = 1;
       ctx.strokeRect(x0, sc.rect.y0, x1 - x0, sc.rect.h);
       ctx.restore();
-      ctx.fillStyle = color;
-      ctx.fillText(`${m.name} ${Math.round(m.score * 100)}%`, x0 + 4, sc.rect.y0 + 12);
+      place(`${m.name} ${Math.round(m.score * 100)}%`, x0 + 2, sc.rect.y0 + 20, color, true);
       markers.push({ x0, x1, y0: sc.rect.y0, y1: sc.rect.y0 + 18, tooltip: `${m.name}\n모양 유사도 ${Math.round(m.score * 100)}%` });
     }
   }
