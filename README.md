@@ -57,6 +57,31 @@ python3 -m uvicorn backend.main:app --host 0.0.0.0 --port 8000
 
 브라우저에서 `http://localhost:8000` 접속.
 
+## 웹에 배포하기 (링크로 어디서나 접속)
+
+이 저장소에는 [Render](https://render.com) 배포 청사진(`render.yaml`)이 포함되어 있어서,
+계정만 연결하면 `https://<서비스이름>.onrender.com` 형태의 고정 주소가 발급됩니다.
+
+1. https://render.com 에 GitHub 계정으로 가입/로그인
+2. 대시보드에서 **New → Blueprint** 선택
+3. `Penguin8282/coin_chart` 저장소를 선택하면 `render.yaml`을 자동으로 읽어옵니다
+4. 환경변수 입력창이 뜨면 아래를 채우고 **Apply**
+   - `APP_USER` / `APP_PASSWORD` — **꼭 설정하세요.** 배포된 주소는 링크를 아는 누구나
+     접속할 수 있고, 설정하지 않으면 아무나 커스텀 패턴·관심종목을 수정할 수 있습니다.
+     설정하면 브라우저 기본 로그인창으로 사이트 전체가 보호됩니다.
+   - `TOSS_CLIENT_ID` / `TOSS_CLIENT_SECRET` — (선택) 한국·미국 주식 실시간 시세용.
+     비워두면 야후 파이낸스로 자동 폴백됩니다.
+5. 첫 배포는 몇 분 걸립니다. 완료되면 상단에 나오는 주소가 바로 접속 링크입니다.
+
+참고사항:
+- **무료 플랜은 15분간 접속이 없으면 잠들었다가**, 다음 접속 시 다시 깨어나느라
+  30초 정도 걸립니다. 항상 즉시 뜨게 하려면 유료 플랜으로 올리면 됩니다.
+- `render.yaml`은 커스텀 패턴이 재시작 후에도 남도록 1GB 영구 디스크를 함께 만듭니다.
+  무료 플랜에서 디스크를 쓸 수 없다는 오류가 나면, `render.yaml`의 `disk:` 블록과
+  `DATA_DIR` 환경변수를 지우고 다시 Apply 하세요 (대신 재시작 시 저장된 패턴이 사라집니다).
+- Render 외 다른 곳에 올리셔도 됩니다. 필요한 건 `pip install -r backend/requirements.txt`
+  후 `uvicorn backend.main:app --host 0.0.0.0 --port $PORT` 를 실행하는 것뿐입니다.
+
 ## 폴더 구조
 
 ```

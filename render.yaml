@@ -1,0 +1,39 @@
+# Render.com 배포 청사진(Blueprint)
+# 사용법: Render 대시보드 → New → Blueprint → 이 저장소 선택 → Apply
+# 그러면 아래 설정대로 서비스가 만들어지고 https://<서비스이름>.onrender.com 주소가 발급된다.
+services:
+  - type: web
+    name: coin-chart
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: uvicorn backend.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/markets
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+
+      # 접근 보호 (권장) — 설정하면 브라우저 로그인창으로 사이트 전체가 보호된다.
+      # sync: false 이므로 Render 대시보드에서 직접 값을 입력하게 되며, git에는 저장되지 않는다.
+      - key: APP_USER
+        sync: false
+      - key: APP_PASSWORD
+        sync: false
+
+      # 토스증권 공식 Open API 자격증명 (선택) — 한국/미국 주식 실시간 시세용.
+      # 미설정 시 야후 파이낸스로 자동 폴백된다.
+      - key: TOSS_CLIENT_ID
+        sync: false
+      - key: TOSS_CLIENT_SECRET
+        sync: false
+
+      # 커스텀 패턴/관심종목을 저장할 영구 디스크 경로.
+      # 아래 disk 설정과 짝을 이룬다. (무료 플랜에서 디스크를 못 쓰면 이 두 항목을
+      # 모두 지워도 되지만, 그 경우 서비스 재시작 시 저장된 패턴이 사라진다.)
+      - key: DATA_DIR
+        value: /var/data
+
+    disk:
+      name: coin-chart-data
+      mountPath: /var/data
+      sizeGB: 1

@@ -1,16 +1,19 @@
 from __future__ import annotations
 
+import base64
 import math
+import os
+import secrets
 from pathlib import Path
 
 from dotenv import load_dotenv
 load_dotenv()  # .env 파일이 있으면 TOSS_CLIENT_ID/TOSS_CLIENT_SECRET 등을 환경변수로 로드 (git 제외 대상)
 
 import numpy as np
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, Response
 
 from . import db
 from .data_providers import get_candles, DEFAULT_SYMBOLS
@@ -24,7 +27,34 @@ from .indicators import atr as atr_fn
 from .models import RulePatternCreate, ShapePatternCreate, WatchlistItem
 
 app = FastAPI(title="개인 차트 분석 시스템")
-app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
+
+# 프론트엔드는 백엔드와 같은 오리진에서 서빙되므로 기본적으로 CORS 개방이 필요 없다.
+# 외부 도메인에서 이 API를 직접 호출해야 한다면 ALLOWED_ORIGINS에 콤마로 구분해 지정한다.
+_origins = [o.strip() for o in os.environ.get("ALLOWED_ORIGINS", "").split(",") if o.strip()]
+if _origins:
+    app.add_middleware(CORSMiddleware, allow_origins=_origins, allow_methods=["*"], allow_headers=["*"])
+
+
+# ── 선택적 접근 보호 ──────────────────────────────────────────────────────
+# 공개 URL로 배포하면 링크를 아는 누구나 커스텀 패턴/관심종목을 수정할 수 있다.
+# APP_PASSWORD 환경변수를 설정하면 브라우저 기본 로그인창으로 전체 사이트를 보호한다.
+# (미설정 시 보호 없음 — 로컬에서 혼자 쓸 때는 그대로 두면 된다.)
+_APP_USER = os.environ.get("APP_USER", "admin")
+_APP_PASSWORD = os.environ.get("APP_PASSWORD")
+
+if _APP_PASSWORD:
+    @app.middleware("http")
+    async def basic_auth(request: Request, call_next):
+        header = request.headers.get("authorization", "")
+        expected = "Basic " + base64.b64encode(f"{_APP_USER}:{_APP_PASSWORD}".encode()).decode()
+        if not secrets.compare_digest(header, expected):
+            return Response(
+                status_code=401,
+                headers={"WWW-Authenticate": 'Basic realm="chart"'},
+                content="인증이 필요합니다",
+            )
+        return await call_next(request)
+
 
 db.init_db()
 
