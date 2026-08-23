@@ -166,21 +166,44 @@ _BINANCE_INTERVAL = {
 }
 
 
+# 바이낸스는 일부 국가(대표적으로 미국) IP에서 api.binance.com 접근을 막고
+# HTTP 451(Unavailable For Legal Reasons)을 돌려준다. 클라우드에 배포하면
+# 서버가 미국 리전인 경우가 많아 여기에 걸린다.
+# data-api.binance.vision 은 바이낸스가 공개한 "시세 조회 전용" 엔드포인트로
+# 같은 /api/v3 스펙을 제공하면서 이 지역 제한을 받지 않는다. 그래서 이쪽을
+# 먼저 시도하고, 실패하면 원래 도메인으로 넘어간다.
+_BINANCE_HOSTS = (
+    "https://data-api.binance.vision",
+    "https://api.binance.com",
+)
+
+
 def fetch_binance(symbol: str, interval: str, limit: int = 500) -> list[Candle]:
     bi = _BINANCE_INTERVAL.get(interval)
     if not bi:
-        raise ValueError(f"unsupported interval for binance: {interval}")
-    url = "https://api.binance.com/api/v3/klines"
+        raise ValueError(f"바이낸스가 지원하지 않는 간격입니다: {interval}")
     params = {"symbol": symbol, "interval": bi, "limit": min(limit, 1000)}
-    with httpx.Client(timeout=_HTTP_TIMEOUT, headers={"User-Agent": _UA}) as client:
-        r = client.get(url, params=params)
-        r.raise_for_status()
-        raw = r.json()
-    out = []
-    for row in raw:
-        out.append(Candle(t=int(row[0]), o=float(row[1]), h=float(row[2]),
-                           l=float(row[3]), c=float(row[4]), v=float(row[5])))
-    return out
+
+    last_err: Exception | None = None
+    for host in _BINANCE_HOSTS:
+        try:
+            with httpx.Client(timeout=_HTTP_TIMEOUT, headers={"User-Agent": _UA}) as client:
+                r = client.get(f"{host}/api/v3/klines", params=params)
+                r.raise_for_status()
+                raw = r.json()
+            out = []
+            for row in raw:
+                out.append(Candle(t=int(row[0]), o=float(row[1]), h=float(row[2]),
+                                   l=float(row[3]), c=float(row[4]), v=float(row[5])))
+            if out:
+                return out
+        except Exception as e:  # noqa: BLE001 - 다음 호스트로 넘어가기 위해 흡수
+            last_err = e
+            continue
+
+    if last_err:
+        raise last_err
+    raise ValueError("바이낸스 응답이 비어 있습니다")
 
 
 # ── 1-2) 코인 거래소 선택 ────────────────────────────────────────────────
@@ -511,22 +534,35 @@ def get_candles(market: Market, symbol: str, interval: str = "1d", limit: int = 
                       ("yahoo", lambda: fetch_yahoo(yahoo_sym, interval, limit))]
 
     last_err = None
+    chosen_err: str | None = None       # 사용자가 고른 거래소가 왜 실패했는지
+    chosen_name = exchange if market == "crypto" else None
+    if market == "crypto" and chosen_name not in CRYPTO_EXCHANGES:
+        chosen_name = DEFAULT_CRYPTO_EXCHANGE
+
     for name, fn in tries:
         try:
             candles = fn()
             if candles and len(candles) >= 10:
                 note = None
-                if market == "crypto" and name != (exchange or DEFAULT_CRYPTO_EXCHANGE):
+                if market == "crypto" and name != chosen_name:
                     used = CRYPTO_EXCHANGES.get(name, {}).get("label", name)
-                    note = f"{requested_label}에서 가져오지 못해 {used} 시세로 대신 표시합니다"
+                    reason = f" ({chosen_err})" if chosen_err else ""
+                    note = f"{requested_label}에서 가져오지 못해{reason} {used} 시세로 대신 표시합니다"
                 return {
                     "candles": [asdict(c) for c in candles],
                     "source": name,
                     "currency": _source_currency(market, name),
                     "note": note,
                 }
+        except httpx.HTTPStatusError as e:
+            last_err = e
+            if name == chosen_name:
+                chosen_err = _status_hint(e.response.status_code)
+            continue
         except Exception as e:  # noqa: BLE001 - 폴백 체인이므로 모든 실패를 흡수
             last_err = e
+            if name == chosen_name:
+                chosen_err = str(e)
             continue
 
     demo = generate_demo(symbol, interval, limit)
@@ -534,6 +570,75 @@ def get_candles(market: Market, symbol: str, interval: str = "1d", limit: int = 
             "currency": _source_currency(market, "demo"),
             "note": "실시간 데이터 연결 실패로 데모 데이터를 표시합니다"
                     + (f" ({last_err})" if last_err else "")}
+
+
+def probe_providers(market: Market, symbol: str, interval: str = "1h") -> list[dict]:
+    """각 데이터 소스를 하나씩 실제로 호출해보고 결과를 그대로 보고한다.
+    폴백 체인은 실패를 조용히 삼키기 때문에, 배포 환경에서 "왜 안 되는지"를
+    확인하려면 이렇게 개별 결과를 봐야 한다. HTTP 상태코드를 그대로 노출해
+    지역 차단(451)·요청제한(429)·종목없음(400/404)을 구분할 수 있게 한다."""
+    preset = next((p for p in DEFAULT_SYMBOLS.get(market, []) if p["symbol"] == symbol), None)
+
+    checks: list[tuple[str, object]] = []
+    if market == "crypto":
+        base = crypto_base(preset["symbol"] if preset else symbol)
+        binance_sym = preset["binance"] if preset else (symbol if symbol.upper().endswith("USDT") else base + "USDT")
+        for host in _BINANCE_HOSTS:
+            checks.append((f"binance @ {host.split('//')[1]}",
+                           lambda h=host: _probe_binance_host(h, binance_sym, interval)))
+        checks += [
+            ("upbit", lambda: fetch_upbit(base, interval, 60)),
+            ("bithumb", lambda: fetch_bithumb(base, interval, 60)),
+            ("coinbase", lambda: fetch_coinbase(base, interval, 60)),
+            ("yahoo", lambda: fetch_yahoo(preset["yahoo"] if preset else base + "-USD", interval, 60)),
+        ]
+    else:
+        if toss_openapi.is_configured():
+            toss_sym = symbol.upper() if market == "us" else symbol
+            checks.append(("toss_openapi", lambda: [Candle(**c) for c in toss_openapi.fetch_candles(toss_sym, "1d", 60)]))
+        else:
+            checks.append(("toss_openapi", None))
+        yahoo_sym = preset["yahoo"] if preset else (symbol.upper() if market == "us" else symbol + ".KS")
+        checks.append(("yahoo", lambda: fetch_yahoo(yahoo_sym, interval, 60)))
+
+    results = []
+    for name, fn in checks:
+        if fn is None:
+            results.append({"source": name, "ok": False,
+                            "error": "TOSS_CLIENT_ID / TOSS_CLIENT_SECRET 환경변수가 설정되지 않음"})
+            continue
+        entry = {"source": name, "ok": False}
+        try:
+            candles = fn()
+            entry.update(ok=True, candles=len(candles),
+                         last_close=round(float(candles[-1].c), 6) if candles else None)
+        except httpx.HTTPStatusError as e:
+            entry.update(status=e.response.status_code, error=_status_hint(e.response.status_code))
+        except Exception as e:  # noqa: BLE001
+            entry.update(error=f"{type(e).__name__}: {e}")
+        results.append(entry)
+    return results
+
+
+def _probe_binance_host(host: str, symbol: str, interval: str) -> list[Candle]:
+    bi = _BINANCE_INTERVAL.get(interval, "1h")
+    with httpx.Client(timeout=_HTTP_TIMEOUT, headers={"User-Agent": _UA}) as client:
+        r = client.get(f"{host}/api/v3/klines", params={"symbol": symbol, "interval": bi, "limit": 60})
+        r.raise_for_status()
+        raw = r.json()
+    return [Candle(t=int(x[0]), o=float(x[1]), h=float(x[2]), l=float(x[3]), c=float(x[4]), v=float(x[5]))
+            for x in raw]
+
+
+def _status_hint(code: int) -> str:
+    return {
+        451: "451 지역 차단 — 이 서버 IP(리전)에서는 접근이 막혀 있습니다",
+        429: "429 요청 한도 초과 — 잠시 후 다시 시도하세요",
+        418: "418 요청 한도 초과로 일시 차단됨",
+        403: "403 접근 거부 — 차단되었거나 허용되지 않은 요청입니다",
+        400: "400 잘못된 요청 — 종목 심볼이 그 거래소에 없을 수 있습니다",
+        404: "404 없음 — 그 거래소에 해당 종목이 없습니다",
+    }.get(code, f"HTTP {code}")
 
 
 def _source_currency(market: Market, source: str) -> str:

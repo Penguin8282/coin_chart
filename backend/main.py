@@ -16,7 +16,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
 from . import db
-from .data_providers import get_candles, DEFAULT_SYMBOLS, CRYPTO_EXCHANGES, DEFAULT_CRYPTO_EXCHANGE
+from .data_providers import (get_candles, probe_providers, DEFAULT_SYMBOLS,
+                             CRYPTO_EXCHANGES, DEFAULT_CRYPTO_EXCHANGE)
 from .scoring import compute_signals
 from .range_filter_fbb import compute_range_filter, compute_fibonacci_bb
 from .patterns import find_pivots, detect_candlestick_patterns, detect_chart_patterns
@@ -171,6 +172,19 @@ def analysis(market: str, symbol: str, interval: str = "1d", limit: int = 500,
         "custom_matches": custom_matches,
         "range_filter": rf,
         "fibonacci_bb": fbb,
+    })
+
+
+@app.get("/api/diag")
+def diag(market: str = "crypto", symbol: str = "BTCUSDT", interval: str = "1h"):
+    """데이터 소스별 연결 상태를 있는 그대로 보고한다.
+    폴백 체인이 실패를 삼켜버리기 때문에, 배포 후 "왜 이 거래소가 안 잡히는지"를
+    확인하려면 이 엔드포인트를 열어보면 된다. 접근 보호가 켜져 있으면 로그인이 필요하다."""
+    if market not in ("crypto", "us", "kr"):
+        raise HTTPException(400, "market은 crypto|us|kr 중 하나여야 합니다")
+    return _clean({
+        "market": market, "symbol": symbol, "interval": interval,
+        "results": probe_providers(market, symbol, interval),
     })
 
 
