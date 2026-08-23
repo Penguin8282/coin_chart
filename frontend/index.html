@@ -44,7 +44,7 @@
     <div class="side-block">
       <div class="side-head">
         <span>관심 종목 <b id="watchCount">0</b>개</span>
-        <button id="watchAddBtn" class="mini-btn" title="현재 종목을 관심종목에 추가">＋ 관리</button>
+        <button id="openPickerBtn" class="mini-btn" title="코인·국내주식·해외주식을 검색해 추가">＋ 종목 추가</button>
       </div>
       <div id="watchlistList"></div>
     </div>
@@ -339,6 +339,40 @@
     </div><!-- /viewport -->
   </div><!-- /main -->
 </div><!-- /shell -->
+
+<!-- 종목 추가 -->
+<div id="pickerModal" class="modal hidden">
+  <div class="modal-box picker-box">
+    <div class="modal-head">
+      <h3>관심종목 추가</h3>
+      <button id="closePickerBtn" class="icon-btn" aria-label="닫기">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
+      </button>
+    </div>
+
+    <div class="tabs" id="pickerTabs">
+      <button class="tab active" data-pmarket="crypto">코인</button>
+      <button class="tab" data-pmarket="kr">국내주식</button>
+      <button class="tab" data-pmarket="us">해외주식</button>
+    </div>
+
+    <div class="search-field">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="M16.5 16.5L21 21"/></svg>
+      <input id="pickerSearch" placeholder="종목명 또는 티커로 검색 (예: 이더리움, XRP, 삼성)" autocomplete="off" />
+    </div>
+
+    <div id="pickerResults" class="picker-results"></div>
+
+    <div class="picker-direct">
+      <p class="fineprint">목록에 없는 종목은 티커를 직접 입력해 추가하세요. 국내주식은 6자리 종목코드(예: 005930), 해외주식은 티커(예: NVDA), 코인은 바이낸스 심볼(예: PEPEUSDT)입니다.</p>
+      <div class="direct-row">
+        <input id="directSymbol" placeholder="티커 직접입력" autocomplete="off" />
+        <button id="directAddBtn" class="primary-btn">추가</button>
+      </div>
+      <div id="pickerError" class="error"></div>
+    </div>
+  </div>
+</div>
 
 <!-- 커스텀 패턴 빌더 -->
 <div id="builderModal" class="modal hidden">
