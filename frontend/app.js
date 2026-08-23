@@ -132,8 +132,7 @@ const el = {
   chart: $("chartCanvas"), vol: $("volCanvas"), evidence: $("evidenceCanvas"),
   spark: $("verdictSpark"), obsSpark: $("obsSpark"),
   crosshair: $("crosshairReadout"), tooltip: $("tooltip"), evTip: $("evidenceTip"),
-  market: $("marketSelect"), symbol: $("symbolSelect"), custom: $("customSymbol"),
-  interval: $("intervalSelect"), loadBtn: $("loadBtn"), exchange: $("exchangeSelect"),
+  market: $("marketSelect"), exchange: $("exchangeSelect"),
 };
 const ctx = el.chart.getContext("2d");
 const vctx = el.vol.getContext("2d");
@@ -152,8 +151,9 @@ async function loadMarkets() {
   el.exchange.innerHTML = window.__exchanges
     .map(x => `<option value="${x.id}">${x.label} (${x.region} · ${x.currency})</option>`).join("");
   el.exchange.value = state.exchange;
-  populateSymbolSelect();
+  if (!state.symbol) state.symbol = defaultSymbol(state.market);
   updateExchangeField();
+  syncSymbolButton();
 }
 
 /* 거래소 선택은 코인일 때만 의미가 있다 */
@@ -166,10 +166,31 @@ function exchangeLabel(id) {
   return hit ? hit.label : id;
 }
 
-function populateSymbolSelect() {
-  const list = (window.__markets || {})[state.market] || [];
-  el.symbol.innerHTML = list.map(p => `<option value="${p.symbol}">${p.name} (${p.symbol})</option>`).join("");
-  if (list.length) state.symbol = list[0].symbol;
+function defaultSymbol(market) {
+  const list = (window.__markets || {})[market] || [];
+  return list.length ? list[0].symbol : "";
+}
+
+/* 상단 바의 종목 버튼을 현재 상태에 맞춘다 */
+function syncSymbolButton() {
+  if (!state.symbol) return;
+  $("symbolBtnSym").textContent = state.symbol;
+  $("symbolBtnName").textContent =
+    `${MARKET_LABEL[state.market] || state.market} · ${symbolDisplayName(state.market, state.symbol)}`;
+}
+
+/* 종목을 바꾸는 유일한 경로 — 관심종목·스크리너·검색이 모두 이걸 쓴다.
+   예전에는 같은 다섯 줄이 세 곳에 흩어져 있어서 한 곳만 고치면 나머지가 어긋났다. */
+function goToSymbol(market, symbol, opts = {}) {
+  state.market = market;
+  state.symbol = symbol;
+  el.market.value = market;
+  if (opts.interval) state.interval = opts.interval;
+  updateExchangeField();
+  syncSegmented();
+  syncSymbolButton();
+  if (opts.view) switchView(opts.view);
+  loadAnalysis();
 }
 
 function symbolDisplayName(market, symbol) {
@@ -190,11 +211,11 @@ const SOURCE_LABEL = {
 };
 
 async function loadAnalysis() {
-  const sym = el.custom.value.trim() || state.symbol;
+  const sym = state.symbol;
+  if (!sym) return;
   const btn = $("refreshBtn");
   btn.classList.add("busy");
-  el.loadBtn.disabled = true;
-  el.loadBtn.textContent = "불러오는 중…";
+  $("symbolBtn").classList.add("loading");
   try {
     const p = state.params;
     const qs = `market=${state.market}&symbol=${encodeURIComponent(sym)}&interval=${state.interval}` +
@@ -202,8 +223,8 @@ async function loadAnalysis() {
                `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}`;
     const data = await api(`/analysis?${qs}`);
     state.data = data;
-    state.symbol = sym;
     state.currency = data.currency || "USD";
+    syncSymbolButton();
     state.view.count = Math.min(160, data.candles.length);
     state.view.start = Math.max(0, data.candles.length - state.view.count);
 
@@ -218,8 +239,7 @@ async function loadAnalysis() {
     toast("데이터를 불러오지 못했습니다: " + e.message);
   } finally {
     btn.classList.remove("busy");
-    el.loadBtn.disabled = false;
-    el.loadBtn.textContent = "불러오기";
+    $("symbolBtn").classList.remove("loading");
   }
 }
 
@@ -861,16 +881,16 @@ function renderWatchlist() {
       <button class="del-btn" data-market="${w.market}" data-symbol="${w.symbol}" aria-label="${w.symbol} 삭제">${X_ICON}</button>
     </div>`).join("");
 
+  const box = $("watchlistList");
+  requestAnimationFrame(() => {
+    box.closest(".side-block")?.classList.toggle("has-more", box.scrollHeight > box.clientHeight + 4);
+  });
+
   $("watchlistList").querySelectorAll(".watch-row").forEach(row => {
     const go = (e) => {
       if (e.target.closest(".del-btn")) return;
       const { market, symbol } = row.dataset;
-      el.market.value = market; state.market = market;
-      populateSymbolSelect();
-      updateExchangeField();
-      el.custom.value = symbol;
-      if ([...el.symbol.options].some(o => o.value === symbol)) el.symbol.value = symbol;
-      loadAnalysis();
+      goToSymbol(market, symbol);
     };
     row.addEventListener("click", go);
     row.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); go(e); } });
@@ -905,113 +925,186 @@ async function removeWatch(market, symbol) {
 
 /* ══════════════════ 종목 추가 모달 ══════════════════ */
 const PICKER_MARKET_LABEL = { crypto: "코인", kr: "국내주식", us: "해외주식" };
-state.pickerMarket = "crypto";
+state.pickerMarket = "all";
+state.pickerIndex = 0;
 
-function openPicker() {
+function openPicker(prefill) {
   $("pickerModal").classList.remove("hidden");
   $("pickerError").textContent = "";
-  $("pickerSearch").value = "";
+  $("pickerSearch").value = prefill || "";
+  state.pickerIndex = 0;
   renderPicker();
   $("pickerSearch").focus();
+  $("pickerSearch").select();
 }
 function closePicker() { $("pickerModal").classList.add("hidden"); }
 
+/* 검색 결과 — '전체' 탭이면 세 시장을 한꺼번에 훑는다.
+   보고 싶은 종목이 어느 시장인지 먼저 고르게 하는 건 사용자에게 떠넘기는 일이다. */
 function pickerCandidates() {
-  const list = (window.__markets || {})[state.pickerMarket] || [];
+  const markets = state.pickerMarket === "all"
+    ? ["crypto", "kr", "us"] : [state.pickerMarket];
   const q = $("pickerSearch").value.trim().toLowerCase();
-  if (!q) return list;
-  return list.filter(p => {
-    const hay = [p.symbol, p.name, ...(p.aliases || [])].join(" ").toLowerCase();
-    return hay.includes(q);
-  });
+  const out = [];
+  for (const m of markets) {
+    for (const p of (window.__markets || {})[m] || []) {
+      if (!q) { out.push({ ...p, market: m }); continue; }
+      const hay = [p.symbol, p.name, ...(p.aliases || [])].join(" ").toLowerCase();
+      if (hay.includes(q)) out.push({ ...p, market: m, exact: p.symbol.toLowerCase() === q });
+    }
+  }
+  // 티커가 정확히 일치하면 맨 위로
+  out.sort((a, b) => (b.exact ? 1 : 0) - (a.exact ? 1 : 0));
+  return out.slice(0, 60);
+}
+
+/* 목록에 없는 티커도 바로 열어볼 수 있게 후보를 하나 만들어 준다.
+   단, 티커처럼 생겼을 때만 — "엔비디아"를 쳤는데 "엔비디아USDT"를 권하면 안 된다. */
+function directCandidate() {
+  const raw = $("pickerSearch").value.trim();
+  if (!raw) return null;
+  const rows = pickerCandidates();
+  if (rows.some(r => r.symbol.toLowerCase() === raw.toLowerCase())) return null;
+
+  if (/^\d{6}$/.test(raw)) {                       // 국내주식 종목코드
+    return { symbol: raw, name: "직접 입력한 종목코드", market: "kr", direct: true };
+  }
+  if (!/^[A-Za-z][A-Za-z0-9.\-]{0,11}$/.test(raw)) return null;   // 영문 티커가 아니면 권하지 않는다
+
+  const m = state.pickerMarket === "all" ? "crypto" : state.pickerMarket;
+  if (m === "kr") return null;
+  let symbol = raw.toUpperCase();
+  if (m === "crypto" && !symbol.endsWith("USDT")) symbol += "USDT";
+  return { symbol, name: "직접 입력한 티커", market: m, direct: true };
+}
+
+function pickerRows() {
+  const rows = pickerCandidates();
+  const d = directCandidate();
+  return d ? [...rows, d] : rows;
 }
 
 function renderPicker() {
-  const market = state.pickerMarket;
-  const rows = pickerCandidates();
+  const rows = pickerRows();
   const box = $("pickerResults");
   if (!rows.length) {
-    box.innerHTML = `<p class="empty-msg">검색 결과가 없습니다.<br>아래에서 티커를 직접 입력해 추가할 수 있습니다.</p>`;
+    box.innerHTML = `<p class="empty-msg">검색 결과가 없습니다.<br>
+      국내주식은 6자리 종목코드(예: 005930), 해외주식은 티커(예: NVDA),
+      코인은 심볼(예: PEPEUSDT)로 입력해보세요.</p>`;
     return;
   }
-  box.innerHTML = rows.map(p => {
-    const on = isWatched(market, p.symbol);
-    return `<button class="picker-row ${on ? "added" : ""}" data-symbol="${p.symbol}">
+  if (state.pickerIndex >= rows.length) state.pickerIndex = rows.length - 1;
+  if (state.pickerIndex < 0) state.pickerIndex = 0;
+
+  box.innerHTML = rows.map((p, i) => {
+    const on = isWatched(p.market, p.symbol);
+    return `<div class="picker-row ${i === state.pickerIndex ? "cursor" : ""}"
+                 data-i="${i}" role="option" aria-selected="${i === state.pickerIndex}">
+      <span class="pr-mk">${MARKET_LABEL[p.market] || p.market}</span>
       <span class="pr-meta">
         <span class="pr-name">${p.name}</span>
         <span class="pr-sym">${p.symbol}${p.aliases && p.aliases.length ? " · " + p.aliases[0] : ""}</span>
       </span>
-      <span class="pr-action">${on ? "담김 ✓" : "＋ 담기"}</span>
-    </button>`;
+      <button class="pr-star ${on ? "on" : ""}" data-star="${i}"
+              title="${on ? "관심종목에서 빼기" : "관심종목에 담기"}"
+              aria-label="${on ? "관심종목에서 빼기" : "관심종목에 담기"}">${on ? "★" : "☆"}</button>
+      <span class="pr-go">보러가기 ›</span>
+    </div>`;
   }).join("");
 
   box.querySelectorAll(".picker-row").forEach(row => {
-    row.addEventListener("click", async () => {
-      const symbol = row.dataset.symbol;
-      if (isWatched(market, symbol)) {
-        await removeWatch(market, symbol);
-        toast(`${symbol} 을(를) 관심종목에서 뺐습니다.`);
-      } else {
-        await addWatch(market, symbol);
-        toast(`${symbol} 을(를) 관심종목에 담았습니다.`);
-      }
-      renderPicker();
+    row.addEventListener("click", (e) => {
+      if (e.target.closest(".pr-star")) return;
+      choosePicker(Number(row.dataset.i));
+    });
+    row.addEventListener("mousemove", () => {
+      const i = Number(row.dataset.i);
+      if (state.pickerIndex !== i) { state.pickerIndex = i; renderPicker(); }
     });
   });
+  box.querySelectorAll(".pr-star").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.stopPropagation();
+      await toggleWatch(Number(btn.dataset.star));
+    });
+  });
+  box.querySelector(".picker-row.cursor")?.scrollIntoView({ block: "nearest" });
 }
 
-$("openPickerBtn").addEventListener("click", openPicker);
+/* Enter — 그 종목을 바로 열어준다 */
+function choosePicker(i) {
+  const rows = pickerRows();
+  const p = rows[i];
+  if (!p) return;
+  closePicker();
+  goToSymbol(p.market, p.symbol, { view: "overview" });
+}
+
+/* Ctrl+Enter 또는 ★ — 관심종목에 담고 팔레트는 열어둔다 */
+async function toggleWatch(i) {
+  const rows = pickerRows();
+  const p = rows[i];
+  if (!p) return;
+  const err = $("pickerError");
+  err.textContent = "";
+
+  // 직접 입력한 티커는 오타일 수 있다. 담아두면 나중에 눌렀을 때 데모 데이터가
+  // 떠서 혼란스러우므로, 실제로 시세가 오는 종목인지 먼저 확인한다.
+  if (p.direct && !isWatched(p.market, p.symbol)) {
+    err.textContent = "확인 중…";
+    try {
+      const probe = await api(`/candles?market=${p.market}&symbol=${encodeURIComponent(p.symbol)}&interval=1d&limit=60`);
+      if (probe.source === "demo") {
+        err.textContent = `${p.symbol} 의 시세를 가져오지 못했습니다. 티커를 확인해주세요.`;
+        return;
+      }
+    } catch (e) {
+      err.textContent = e.message;
+      return;
+    }
+    err.textContent = "";
+  }
+
+  if (isWatched(p.market, p.symbol)) {
+    await removeWatch(p.market, p.symbol);
+    toast(`${p.symbol} 을(를) 관심종목에서 뺐습니다.`);
+  } else {
+    await addWatch(p.market, p.symbol);
+    toast(`${p.symbol} 을(를) 관심종목에 담았습니다.`);
+  }
+  renderPicker();
+}
+
+$("pickerSearch").addEventListener("keydown", (e) => {
+  const rows = pickerRows();
+  if (e.key === "ArrowDown") { e.preventDefault(); state.pickerIndex = Math.min(state.pickerIndex + 1, rows.length - 1); renderPicker(); }
+  else if (e.key === "ArrowUp") { e.preventDefault(); state.pickerIndex = Math.max(state.pickerIndex - 1, 0); renderPicker(); }
+  else if (e.key === "Enter") {
+    e.preventDefault();
+    if (e.ctrlKey || e.metaKey) toggleWatch(state.pickerIndex);
+    else choosePicker(state.pickerIndex);
+  }
+  else if (e.key === "Escape") { e.preventDefault(); closePicker(); }
+});
+
+$("openPickerBtn").addEventListener("click", () => openPicker());
+$("symbolBtn").addEventListener("click", () => openPicker());
+$("openPaletteFromSettings").addEventListener("click", () => openPicker());
 $("closePickerBtn").addEventListener("click", closePicker);
 $("pickerModal").addEventListener("click", (e) => { if (e.target === $("pickerModal")) closePicker(); });
-$("pickerSearch").addEventListener("input", renderPicker);
+$("pickerSearch").addEventListener("input", () => { state.pickerIndex = 0; renderPicker(); });
 
 document.querySelectorAll("#pickerTabs .tab").forEach(btn => {
   btn.addEventListener("click", () => {
     state.pickerMarket = btn.dataset.pmarket;
     document.querySelectorAll("#pickerTabs .tab").forEach(b => b.classList.toggle("active", b === btn));
     $("pickerError").textContent = "";
+    state.pickerIndex = 0;
     renderPicker();
+    $("pickerSearch").focus();
   });
 });
 
-/* 목록에 없는 종목을 티커로 직접 추가 */
-async function addDirectSymbol() {
-  const raw = $("directSymbol").value.trim();
-  const err = $("pickerError");
-  err.textContent = "";
-  if (!raw) { err.textContent = "티커를 입력하세요."; return; }
-
-  const market = state.pickerMarket;
-  let symbol = market === "kr" ? raw : raw.toUpperCase();
-  if (market === "crypto" && !symbol.endsWith("USDT")) symbol += "USDT";
-  if (market === "kr" && !/^\d{6}$/.test(symbol)) {
-    err.textContent = "국내주식은 6자리 종목코드로 입력하세요 (예: 005930).";
-    return;
-  }
-  if (isWatched(market, symbol)) { err.textContent = "이미 관심종목에 있습니다."; return; }
-
-  // 실제로 데이터를 받아올 수 있는 종목인지 먼저 확인한다 — 오타를 담아두면
-  // 나중에 눌렀을 때 데모 데이터가 떠서 혼란스럽기 때문.
-  const btn = $("directAddBtn");
-  btn.disabled = true; btn.textContent = "확인 중…";
-  try {
-    const probe = await api(`/candles?market=${market}&symbol=${encodeURIComponent(symbol)}&interval=1d&limit=60`);
-    if (probe.source === "demo") {
-      err.textContent = `${symbol} 의 시세를 가져오지 못했습니다. 티커를 확인해주세요.`;
-      return;
-    }
-    await addWatch(market, symbol);
-    $("directSymbol").value = "";
-    renderPicker();
-    toast(`${symbol} 을(를) 관심종목에 담았습니다.`);
-  } catch (e) {
-    err.textContent = e.message;
-  } finally {
-    btn.disabled = false; btn.textContent = "추가";
-  }
-}
-$("directAddBtn").addEventListener("click", addDirectSymbol);
-$("directSymbol").addEventListener("keydown", (e) => { if (e.key === "Enter") addDirectSymbol(); });
 
 function renderPatternList() {
   const d = state.data;
@@ -1098,13 +1191,51 @@ document.querySelectorAll("#patternTabs .tab").forEach(btn => {
 
 document.querySelectorAll("#tfSegmented button").forEach(btn => {
   btn.addEventListener("click", () => {
+    if (state.interval === btn.dataset.tf) return;
     state.interval = btn.dataset.tf;
-    el.interval.value = state.interval;
-    document.querySelectorAll("#tfSegmented button").forEach(b => b.classList.toggle("active", b === btn));
+    syncSegmented();
     loadAnalysis();
   });
 });
 $("refreshBtn").addEventListener("click", () => loadAnalysis());
+
+/* ── 키보드 ──────────────────────────────────────────────────
+   마우스로만 쓸 수 있는 화면은 자주 쓸수록 불편해진다.
+   입력 중일 때는 가로채지 않는다. */
+const VIEW_KEYS = ["overview", "ledger", "screener", "backtest", "alerts", "portfolio", "patternlab", "settings"];
+
+document.addEventListener("keydown", (e) => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName) || e.target.isContentEditable;
+
+  // Ctrl/⌘+K — 어디서든 종목 검색
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    $("pickerModal").classList.contains("hidden") ? openPicker() : closePicker();
+    return;
+  }
+  if (e.key === "Escape") {
+    if (!$("pickerModal").classList.contains("hidden")) { closePicker(); return; }
+    if (!$("builderModal").classList.contains("hidden")) { closeBuilder(); return; }
+    if (!$("shortcutHelp").classList.contains("hidden")) { $("shortcutHelp").classList.add("hidden"); return; }
+  }
+  if (typing || e.ctrlKey || e.metaKey || e.altKey) return;
+
+  // 숫자 — 화면 전환
+  const n = Number(e.key);
+  if (n >= 1 && n <= VIEW_KEYS.length) {
+    const target = VIEW_KEYS[n - 1];
+    if (document.querySelector(`.view[data-view="${target}"]`)) { e.preventDefault(); switchView(target); }
+    return;
+  }
+  if (e.key === "r" || e.key === "R") { e.preventDefault(); loadAnalysis(); return; }
+  if (e.key === "?" || (e.key === "/" && e.shiftKey)) {
+    e.preventDefault(); $("shortcutHelp").classList.toggle("hidden");
+  }
+});
+$("shortcutHelp").addEventListener("click", (e) => {
+  if (e.target === $("shortcutHelp") || e.target.closest("[data-close]")) $("shortcutHelp").classList.add("hidden");
+});
+$("helpBtn").addEventListener("click", () => $("shortcutHelp").classList.toggle("hidden"));
 
 /* ══════════════════ 차트 인터랙션 ══════════════════ */
 const mx = (e, c) => e.clientX - c.getBoundingClientRect().left;
@@ -1339,9 +1470,9 @@ $("saveShapeBtn").addEventListener("click", async () => {
 /* ══════════════════ 설정 컨트롤 ══════════════════ */
 el.market.addEventListener("change", () => {
   state.market = el.market.value;
-  populateSymbolSelect();
+  state.symbol = defaultSymbol(state.market);
   updateExchangeField();
-  el.custom.value = "";
+  syncSymbolButton();
 });
 
 el.exchange.addEventListener("change", () => {
@@ -1349,13 +1480,7 @@ el.exchange.addEventListener("change", () => {
   localStorage.setItem("sl.exchange", state.exchange);
   if (state.data && state.market === "crypto") loadAnalysis();
 });
-el.loadBtn.addEventListener("click", () => {
-  state.symbol = el.symbol.value;
-  state.interval = el.interval.value;
-  syncSegmented();
-  loadAnalysis();
-});
-el.interval.addEventListener("change", () => { state.interval = el.interval.value; syncSegmented(); });
+
 function syncSegmented() {
   document.querySelectorAll("#tfSegmented button").forEach(b => b.classList.toggle("active", b.dataset.tf === state.interval));
 }
@@ -1455,7 +1580,7 @@ function renderScreener(res) {
       <thead><tr>
         <th>종목</th><th class="num">현재가</th><th class="num">등락</th>
         <th class="num">매수</th><th class="num">매도</th>
-        <th class="num">RSI</th><th class="num">ADX</th><th>판정</th>
+        <th class="num">RSI</th><th class="num">ADX</th><th>판정</th><th></th>
       </tr></thead>
       <tbody>${res.rows.map(r => {
         const [label, tone] = SIGNAL_TEXT[r.signal] || ["—", ""];
@@ -1469,21 +1594,25 @@ function renderScreener(res) {
           <td class="num">${r.rsi}</td>
           <td class="num">${r.adx}${r.strong_trend ? " 🔥" : ""}</td>
           <td><span class="regime-pill ${tone}">${label}</span></td>
+          <td><button class="row-act" data-bt="${r.market}|${r.symbol}" title="${r.symbol} 백테스트">백테스트 ›</button></td>
         </tr>`;
       }).join("")}</tbody>`;
 
     // 행을 누르면 그 종목으로 전환
     $("scrTable").querySelectorAll("tbody tr").forEach(tr => {
-      tr.addEventListener("click", () => {
+      tr.addEventListener("click", (e) => {
+        if (e.target.closest(".row-act")) return;
         const { market, symbol } = tr.dataset;
-        el.market.value = market; state.market = market;
-        populateSymbolSelect(); updateExchangeField();
-        el.custom.value = symbol;
-        if ([...el.symbol.options].some(o => o.value === symbol)) el.symbol.value = symbol;
-        state.interval = $("scrInterval").value;
-        el.interval.value = state.interval; syncSegmented();
-        switchView("overview");
-        loadAnalysis();
+        goToSymbol(market, symbol, { interval: $("scrInterval").value, view: "overview" });
+      });
+    });
+    // 차트로 갔다가 다시 돌아오는 수고 없이 바로 검증할 수 있게 한다
+    $("scrTable").querySelectorAll(".row-act").forEach(btn => {
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        const [market, symbol] = btn.dataset.bt.split("|");
+        goToSymbol(market, symbol, { interval: $("scrInterval").value, view: "backtest" });
+        runBacktest();
       });
     });
 
