@@ -42,9 +42,16 @@ if _origins:
 _APP_USER = os.environ.get("APP_USER", "admin")
 _APP_PASSWORD = os.environ.get("APP_PASSWORD")
 
+# 헬스체크는 인증에서 제외한다. 호스팅 플랫폼(Render 등)의 헬스체크는
+# Authorization 헤더를 보내지 않으므로, 보호를 걸면 401만 돌려받고
+# 서비스가 죽은 것으로 판정해 배포가 실패한다.
+HEALTH_PATH = "/healthz"
+
 if _APP_PASSWORD:
     @app.middleware("http")
     async def basic_auth(request: Request, call_next):
+        if request.url.path == HEALTH_PATH:
+            return await call_next(request)
         header = request.headers.get("authorization", "")
         expected = "Basic " + base64.b64encode(f"{_APP_USER}:{_APP_PASSWORD}".encode()).decode()
         if not secrets.compare_digest(header, expected):
@@ -54,6 +61,12 @@ if _APP_PASSWORD:
                 content="인증이 필요합니다",
             )
         return await call_next(request)
+
+
+@app.get(HEALTH_PATH)
+def healthz():
+    """배포 플랫폼용 헬스체크. 인증 없이 200을 돌려주며 민감한 정보를 노출하지 않는다."""
+    return {"ok": True}
 
 
 db.init_db()
