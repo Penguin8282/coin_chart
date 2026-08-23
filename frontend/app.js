@@ -15,6 +15,8 @@ const C = {
 
 const state = {
   market: "crypto", symbol: "BTCUSDT", interval: "1h", limit: 500,
+  exchange: localStorage.getItem("sl.exchange") || "binance",
+  currency: "USD",
   data: null,
   view: { start: 0, count: 160 },
   toggles: { ema: true, vwap: true, bb: true, fib: true, rf: false, fbb: false,
@@ -33,9 +35,16 @@ const $ = (id) => document.getElementById(id);
 function fmtPrice(p) {
   if (p == null || Number.isNaN(p)) return "—";
   const a = Math.abs(p);
+  // 원화는 소수점이 의미 없고 자릿수가 커서 정수로 끊는다
+  if (state.currency === "KRW") {
+    return p.toLocaleString("ko-KR", { maximumFractionDigits: a >= 100 ? 0 : 2 });
+  }
   const d = a >= 1000 ? 2 : a >= 100 ? 2 : a >= 1 ? 3 : a >= 0.01 ? 5 : 8;
   return p.toLocaleString("ko-KR", { maximumFractionDigits: d, minimumFractionDigits: a >= 1000 ? 2 : 0 });
 }
+
+const CURRENCY_MARK = { KRW: "₩", USD: "$", USDT: "$" };
+const currencyMark = () => CURRENCY_MARK[state.currency] || "";
 const fmtPct = (p) => (p * 100).toFixed(0) + "%";
 
 /* 축 라벨은 폭이 좁아 축약해서 쓴다 — 툴팁·장부에는 전체 정밀도를 유지한다 */
@@ -82,7 +91,7 @@ const el = {
   spark: $("verdictSpark"), obsSpark: $("obsSpark"),
   crosshair: $("crosshairReadout"), tooltip: $("tooltip"), evTip: $("evidenceTip"),
   market: $("marketSelect"), symbol: $("symbolSelect"), custom: $("customSymbol"),
-  interval: $("intervalSelect"), loadBtn: $("loadBtn"),
+  interval: $("intervalSelect"), loadBtn: $("loadBtn"), exchange: $("exchangeSelect"),
 };
 const ctx = el.chart.getContext("2d");
 const vctx = el.vol.getContext("2d");
@@ -92,8 +101,27 @@ const MARGIN = { top: 16, right: 68, bottom: 26, left: 10 };
 
 /* ── 로딩 ───────────────────────────────────────────────────── */
 async function loadMarkets() {
-  window.__markets = await api("/markets");
+  const res = await api("/markets");
+  window.__markets = res.symbols;
+  window.__exchanges = res.exchanges || [];
+  if (!window.__exchanges.some(x => x.id === state.exchange)) {
+    state.exchange = res.default_exchange || "binance";
+  }
+  el.exchange.innerHTML = window.__exchanges
+    .map(x => `<option value="${x.id}">${x.label} (${x.region} · ${x.currency})</option>`).join("");
+  el.exchange.value = state.exchange;
   populateSymbolSelect();
+  updateExchangeField();
+}
+
+/* 거래소 선택은 코인일 때만 의미가 있다 */
+function updateExchangeField() {
+  $("exchangeField").classList.toggle("hidden", state.market !== "crypto");
+}
+
+function exchangeLabel(id) {
+  const hit = (window.__exchanges || []).find(x => x.id === id);
+  return hit ? hit.label : id;
 }
 
 function populateSymbolSelect() {
@@ -110,6 +138,9 @@ function symbolDisplayName(market, symbol) {
 
 const SOURCE_LABEL = {
   binance: "BINANCE SPOT · LIVE",
+  upbit: "UPBIT KRW · LIVE",
+  bithumb: "BITHUMB KRW · LIVE",
+  coinbase: "COINBASE USD · LIVE",
   yahoo: "YAHOO FINANCE · LIVE",
   toss_openapi: "토스증권 OPEN API · LIVE",
   toss_unofficial: "토스증권 · LIVE",
@@ -123,9 +154,12 @@ async function loadAnalysis() {
   el.loadBtn.disabled = true;
   el.loadBtn.textContent = "불러오는 중…";
   try {
-    const data = await api(`/analysis?market=${state.market}&symbol=${encodeURIComponent(sym)}&interval=${state.interval}&limit=${state.limit}`);
+    const qs = `market=${state.market}&symbol=${encodeURIComponent(sym)}&interval=${state.interval}` +
+               `&limit=${state.limit}&exchange=${encodeURIComponent(state.exchange)}`;
+    const data = await api(`/analysis?${qs}`);
     state.data = data;
     state.symbol = sym;
+    state.currency = data.currency || "USD";
     state.view.count = Math.min(160, data.candles.length);
     state.view.start = Math.max(0, data.candles.length - state.view.count);
 
@@ -274,7 +308,7 @@ function renderOverview() {
   const rfState = d.range_filter.upward[last] ? "상승 유지" : d.range_filter.downward[last] ? "하락 유지" : "중립 유지";
   $("verdictSub").textContent = `신뢰 점수 ${topScore} / 22 · ${regime} · Range Filter ${rfState}`;
 
-  $("priceLabel").textContent = `${state.symbol} · 현재 종가`;
+  $("priceLabel").textContent = `${state.symbol} · 현재 종가${state.currency ? " · " + state.currency : ""}`;
   $("priceValue").textContent = fmtPrice(dash.price);
   const prev = d.candles[last - 1]?.c;
   const deltaEl = $("priceDelta");
@@ -789,6 +823,7 @@ function renderWatchlist() {
       const { market, symbol } = row.dataset;
       el.market.value = market; state.market = market;
       populateSymbolSelect();
+      updateExchangeField();
       el.custom.value = symbol;
       if ([...el.symbol.options].some(o => o.value === symbol)) el.symbol.value = symbol;
       loadAnalysis();
@@ -1258,7 +1293,14 @@ $("saveShapeBtn").addEventListener("click", async () => {
 el.market.addEventListener("change", () => {
   state.market = el.market.value;
   populateSymbolSelect();
+  updateExchangeField();
   el.custom.value = "";
+});
+
+el.exchange.addEventListener("change", () => {
+  state.exchange = el.exchange.value;
+  localStorage.setItem("sl.exchange", state.exchange);
+  if (state.data && state.market === "crypto") loadAnalysis();
 });
 el.loadBtn.addEventListener("click", () => {
   state.symbol = el.symbol.value;

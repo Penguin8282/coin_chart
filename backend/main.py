@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, Response
 
 from . import db
-from .data_providers import get_candles, DEFAULT_SYMBOLS
+from .data_providers import get_candles, DEFAULT_SYMBOLS, CRYPTO_EXCHANGES, DEFAULT_CRYPTO_EXCHANGE
 from .scoring import compute_signals
 from .range_filter_fbb import compute_range_filter, compute_fibonacci_bb
 from .patterns import find_pivots, detect_candlestick_patterns, detect_chart_patterns
@@ -92,15 +92,20 @@ def _clean(v):
 
 @app.get("/api/markets")
 def markets():
-    return _clean(DEFAULT_SYMBOLS)
+    return _clean({
+        "symbols": DEFAULT_SYMBOLS,
+        "exchanges": [{"id": k, **v} for k, v in CRYPTO_EXCHANGES.items()],
+        "default_exchange": DEFAULT_CRYPTO_EXCHANGE,
+    })
 
 
 @app.get("/api/candles")
-def candles(market: str, symbol: str, interval: str = "1d", limit: int = 500):
+def candles(market: str, symbol: str, interval: str = "1d", limit: int = 500,
+            exchange: str | None = None):
     if market not in ("crypto", "us", "kr"):
         raise HTTPException(400, "market은 crypto|us|kr 중 하나여야 합니다")
     limit = max(60, min(limit, 1000))
-    result = get_candles(market, symbol, interval, limit)
+    result = get_candles(market, symbol, interval, limit, exchange=exchange)
     return _clean(result)
 
 
@@ -115,11 +120,12 @@ def _ohlcv_arrays(candle_rows: list[dict]):
 
 @app.get("/api/analysis")
 def analysis(market: str, symbol: str, interval: str = "1d", limit: int = 500,
-             vol_len: int = 20, fib_len: int = 100, adx_thr: float = 25.0):
+             vol_len: int = 20, fib_len: int = 100, adx_thr: float = 25.0,
+             exchange: str | None = None):
     if market not in ("crypto", "us", "kr"):
         raise HTTPException(400, "market은 crypto|us|kr 중 하나여야 합니다")
     limit = max(60, min(limit, 1000))
-    fetched = get_candles(market, symbol, interval, limit)
+    fetched = get_candles(market, symbol, interval, limit, exchange=exchange)
     rows = fetched["candles"]
     if len(rows) < 30:
         raise HTTPException(422, "분석하기엔 캔들 데이터가 너무 적습니다")
@@ -154,6 +160,7 @@ def analysis(market: str, symbol: str, interval: str = "1d", limit: int = 500,
 
     return _clean({
         "source": fetched["source"], "note": fetched.get("note"),
+        "currency": fetched.get("currency", "USD"),
         "candles": rows,
         "series": signals["series"],
         "events": signals["events"],
