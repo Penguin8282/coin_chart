@@ -111,17 +111,46 @@ def compute_signals(o, h, l, c, v, vol_len=20, fib_len=100, adx_thr=25.0,
     def b(cond, pts):
         return np.where(cond, pts, 0)
 
-    buy_raw = (b(whale_accum, 3) + b(obv_bull_div, 3) + b(macd_bull, 3) + b(flush, 2) +
-               b(stop_hunt_dn, 2) + b(vwap_buy, 2) + b(obv_up, 2) + b(fib_support, 2) +
-               b(stoch_buy, 2) + b(cvd_bull, 2) + b(ema_bull, 2) +
-               np.where(rsi < 30, 2, np.where(rsi < 40, 1, 0)) +
-               b(bb_buy, 1) + b(bear_reversal, 1) + b(bb_squeeze, 1))
+    # ── 점수표 ──────────────────────────────────────────────────
+    # 점수 합산과 화면의 근거 목록이 이 표 하나에서 나온다. 두 곳에서 따로
+    # 관리하면 근거 합계와 실제 점수가 어긋나는 순간이 반드시 온다.
+    # (key, 라벨, 만점, 매수 획득점 배열, 매도 획득점 배열, 하이라이트 대상)
+    reason_table = [
+        ("whale",    "고래 매집/배분 — 거래량 급증 + 긴 꼬리", 3,
+         b(whale_accum, 3), b(whale_distrib, 3), "panel:vol"),
+        ("obvdiv",   "OBV 다이버전스 — 가격과 반대 (거래량 급증 동반)", 3,
+         b(obv_bull_div, 3), b(obv_bear_div, 3), "tile:obv"),
+        ("macdx",    "MACD 골든/데드 크로스 — 0선 조건 + 히스토그램", 3,
+         b(macd_bull, 3), b(macd_bear, 3), None),
+        ("flush",    "투매 후 회복 — 긴 아래꼬리 양봉 (매수 전용)", 2,
+         b(flush, 2), np.zeros(n), "panel:vol"),
+        ("stophunt", "스탑헌트 — 전저/전고 이탈 후 복귀", 2,
+         b(stop_hunt_dn, 2), b(stop_hunt_up, 2), None),
+        ("vwap",     "VWAP ±2σ 이탈 후 반전 캔들", 2,
+         b(vwap_buy, 2), b(vwap_sell, 2), "layer:vwap"),
+        ("obv",      "OBV 20MA 위/아래 + 방향 일치", 2,
+         b(obv_up, 2), b(obv_dn, 2), "tile:obv"),
+        ("fib",      "피보나치 지지(0.618·0.786) / 저항(0.382·0.5)", 2,
+         b(fib_support, 2), b(fib_resist, 2), "layer:fib"),
+        ("stoch",    "스토캐스틱 과매도/과매수 교차", 2,
+         b(stoch_buy, 2), b(stoch_sell, 2), None),
+        ("cvd",      "CVD — 매수/매도 체결 우위 지속", 2,
+         b(cvd_bull, 2), b(cvd_bear, 2), "panel:vol"),
+        ("ema",      "EMA 정렬 — 9>21>55, 종가>200", 2,
+         b(ema_bull, 2), b(ema_bear, 2), "layer:ema"),
+        ("rsi",      "RSI 과매도/과매수 — 30/40, 70/60 두 단계", 2,
+         np.where(rsi < 30, 2, np.where(rsi < 40, 1, 0)),
+         np.where(rsi > 70, 2, np.where(rsi > 60, 1, 0)), "tile:rsi"),
+        ("bb",       "볼린저 밴드 이탈 반전", 1,
+         b(bb_buy, 1), b(bb_sell, 1), "layer:bb"),
+        ("reversal", "3연속 봉 뒤 반전 캔들", 1,
+         b(bear_reversal, 1), b(bull_reversal, 1), None),
+        ("squeeze",  "볼린저 스퀴즈 — 변동성 응축 (양방향)", 1,
+         b(bb_squeeze, 1), b(bb_squeeze, 1), "layer:bb"),
+    ]
 
-    sell_raw = (b(whale_distrib, 3) + b(obv_bear_div, 3) + b(macd_bear, 3) + b(stop_hunt_up, 2) +
-                b(vwap_sell, 2) + b(obv_dn, 2) + b(fib_resist, 2) + b(stoch_sell, 2) +
-                b(cvd_bear, 2) + b(ema_bear, 2) +
-                np.where(rsi > 70, 2, np.where(rsi > 60, 1, 0)) +
-                b(bb_sell, 1) + b(bull_reversal, 1) + b(bb_squeeze, 1))
+    buy_raw = np.sum([r[3] for r in reason_table], axis=0)
+    sell_raw = np.sum([r[4] for r in reason_table], axis=0)
 
     buy_score = np.where(sideways, 0, np.where(strong_trend, buy_raw, np.round(buy_raw * 0.6))).astype(int)
     sell_score = np.where(sideways, 0, np.where(strong_trend, sell_raw, np.round(sell_raw * 0.6))).astype(int)
@@ -188,6 +217,37 @@ def compute_signals(o, h, l, c, v, vol_len=20, fib_len=100, adx_thr=25.0,
         "tp_sell": float(tp_sell[last]), "sl_sell": float(sl_sell[last]),
         "tp_basis": tp_mode,
         "atr": float(atr[last]) if np.isfinite(atr[last]) else 0.0,
+    }
+
+    # ── 근거 목록 (마지막 봉 기준) — "왜 이 점수인가"를 항목별로 보여준다 ──
+    def _f(x):
+        v = float(x)
+        return v if np.isfinite(v) else 0.0
+
+    detail_map = {
+        "rsi": f"RSI {_f(rsi[last]):.1f}",
+        "macdx": f"라인 {_f(macd_line[last]):.2f} · 시그널 {_f(sig_line[last]):.2f}",
+        "stoch": f"%K {_f(stoch_k[last]):.1f} · %D {_f(stoch_d[last]):.1f}",
+        "ema": f"9={_f(e9[last]):.2f} · 21={_f(e21[last]):.2f} · 55={_f(e55[last]):.2f}",
+        "vwap": f"VWAP {_f(vwap[last]):.2f} · 종가 {_f(c[last]):.2f}",
+        "obv": "OBV가 20MA " + ("위" if obv[last] > obv_ma[last] else "아래"),
+        "cvd": f"CVD {_f(cvd[last]):.1f}",
+        "fib": f"0.618 {_f(fib_618[last]):.2f} · 0.382 {_f(fib_382[last]):.2f}",
+        "whale": f"거래량 {_f(vol_ratio[last]):.2f}배" if np.isfinite(vol_ratio[last]) else None,
+    }
+    dashboard["reasons"] = [
+        {"key": key, "label": label, "max_pts": pts,
+         "buy": int(bp[last]), "sell": int(sp[last]),
+         "target": target, "detail": detail_map.get(key)}
+        for key, label, pts, bp, sp, target in reason_table
+    ]
+    # 원점수와 게이트 — "원점수 12 × 0.6 = 7"을 화면에서 그대로 설명할 수 있게
+    dashboard["score_gate"] = {
+        "buy_raw": int(buy_raw[last]), "sell_raw": int(sell_raw[last]),
+        "sideways": bool(sideways[last]),
+        "strong_trend": bool(strong_trend[last]),
+        "multiplier": 0.0 if sideways[last] else (1.0 if strong_trend[last] else 0.6),
+        "adx": _f(adx[last]), "adx_thr": float(adx_thr),
     }
 
     return {"series": series, "events": events, "dashboard": dashboard}

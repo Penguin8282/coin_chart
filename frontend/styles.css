@@ -989,3 +989,39 @@ table.data tbody tr:hover .row-act,
   border: 1px dashed var(--border-2); background: var(--surface-2); text-align: center;
 }
 .login-nudge p { font-size: 11.5px; color: var(--ink-3); line-height: 1.5; }
+
+
+/* ══════════════ 점수 근거 목록 ══════════════
+   22점이 어디서 왔는지 항목별로 펼쳐 보여준다. 점수만 있고 이유가 없으면
+   맞든 틀리든 판단할 근거가 없다. */
+.reason-block { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+.reason-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  font-size: 12px; color: var(--ink-2);
+}
+.reason-body { display: flex; flex-direction: column; gap: 10px; margin-top: 10px; }
+.reason-search { font-size: 12px; padding: 7px 10px; }
+
+#reasonList { display: flex; flex-direction: column; gap: 3px; max-height: 320px; overflow-y: auto; }
+
+.reason-row {
+  display: grid; grid-template-columns: 1fr auto; gap: 4px 10px;
+  padding: 7px 9px; border-radius: var(--r-sm);
+  border: 1px solid transparent; cursor: default;
+  transition: background .12s, border-color .12s;
+}
+.reason-row:hover { background: var(--surface-2); border-color: var(--border); }
+.reason-row.hit-buy  { background: color-mix(in srgb, var(--bull) 9%, transparent); }
+.reason-row.hit-sell { background: color-mix(in srgb, var(--bear) 9%, transparent); }
+.reason-row .rr-label { font-size: 12px; color: var(--ink-2); line-height: 1.45; }
+.reason-row.hit-buy .rr-label, .reason-row.hit-sell .rr-label { color: var(--ink); }
+.reason-row .rr-pts {
+  font-family: var(--mono); font-size: 11.5px; font-variant-numeric: tabular-nums;
+  color: var(--ink-3); white-space: nowrap; align-self: start;
+}
+.reason-row.hit-buy .rr-pts  { color: var(--bull); font-weight: 600; }
+.reason-row.hit-sell .rr-pts { color: var(--bear); font-weight: 600; }
+.reason-row .rr-detail {
+  grid-column: 1 / -1; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
+}
+.reason-row.dim { opacity: .45; }
