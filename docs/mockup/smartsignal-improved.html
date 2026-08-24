@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>SmartSignal 개선 목업</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>📊</text></svg>" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   SmartSignal 개선 목업 — 정적 HTML, 실데이터 없음.
+
+   토큰은 frontend/styles.css 와 동일한 이름·값을 쓴다. 목업에서 승인된
+   컴포넌트를 본 코드로 옮길 때 클래스와 변수명이 그대로 통하게 하기 위함.
+   다크가 기본, 라이트는 [data-theme="light"] 로만 덮어쓴다.
+   ═══════════════════════════════════════════════════════════════ */
+:root {
+  color-scheme: dark;
+  --bg:#070D10; --surface-1:#0D1519; --surface-2:#121C21; --surface-3:#172329;
+  --border:#1C2A30; --border-2:#26383F;
+  --ink:#E3EDEB; --ink-2:#93A8AC; --ink-3:#5F7378;
+  --accent:#3EE8B0; --accent-dim:#1C6D55; --accent-ink:#04211A;
+  --bull:#2BB98A; --bear:#E5484D; --warn:#E0A32E;
+  --s-ema:#199e70; --s-vwap:#c98500; --s-rf:#3987e5; --s-band:#46606B;
+  --grid:#152128;
+  --tone-blue:#5B9CF0; --tone-violet:#A98BE0;
+  --note:#E0A32E;
+  --shadow-pop:0 8px 26px rgba(0,0,0,.55);
+  --r-sm:8px; --r-md:12px; --r-lg:16px;
+  --sans:"IBM Plex Sans KR",-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,SFMono-Regular,monospace;
+}
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg:#F4F7F6; --surface-1:#FFFFFF; --surface-2:#F1F5F4; --surface-3:#E6ECEA;
+  --border:#DCE4E2; --border-2:#C3CFCC;
+  --ink:#10201C; --ink-2:#4E635E; --ink-3:#7C918C;
+  --accent:#0B8F68; --accent-dim:#C6EBDC; --accent-ink:#FFFFFF;
+  --bull:#0E8A63; --bear:#C4322F; --warn:#A2700F;
+  --s-ema:#12805A; --s-vwap:#A06A00; --s-rf:#2a78d6; --s-band:#8598A0;
+  --grid:#E4EBE9;
+  --tone-blue:#2a78d6; --tone-violet:#6E4F94;
+  --note:#A2700F;
+  --shadow-pop:0 8px 22px rgba(16,32,28,.14);
+}
+
+* { box-sizing:border-box; }
+html,body { margin:0; padding:0; height:100%; background:var(--bg); color:var(--ink);
+  font-family:var(--sans); font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased; }
+h1,h2,h3 { margin:0; letter-spacing:-0.015em; }
+p,dl,dd { margin:0; }
+button { font-family:inherit; cursor:pointer; }
+svg.icon { fill:none; stroke:currentColor; stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:4px; }
+
+.eyebrow { font-family:var(--mono); font-size:10.5px; font-weight:600; letter-spacing:.14em;
+  text-transform:uppercase; color:var(--ink-3); display:flex; align-items:center; gap:6px; }
+.eyebrow .sep { color:var(--border-2); }
+.card-sub { color:var(--ink-2); font-size:12.5px; line-height:1.6; }
+.fine { color:var(--ink-3); font-size:11px; line-height:1.6; }
+.mono { font-family:var(--mono); font-variant-numeric:tabular-nums; }
+.up { color:var(--bull); } .dn { color:var(--bear); } .mut { color:var(--ink-3); }
+
+/* ══════════════ 셸 ══════════════ */
+#shell { display:grid; grid-template-columns:264px 1fr; grid-template-rows:minmax(0,1fr); height:100vh; overflow:hidden; }
+#sidebar { background:var(--surface-1); border-right:1px solid var(--border);
+  display:flex; flex-direction:column; gap:20px; padding:22px 18px; overflow-y:auto; min-height:0; }
+
+.brand { display:flex; align-items:center; gap:11px; padding:0 4px; }
+.brand-mark { width:30px; height:30px; color:var(--accent); }
+.brand-mark rect { fill:currentColor; stroke:none; opacity:.55; }
+.brand-mark path { stroke:currentColor; fill:none; stroke-width:2.4; stroke-linecap:round; stroke-linejoin:round; }
+.brand-text { display:flex; flex-direction:column; line-height:1.15; }
+.brand-text span { font-family:var(--mono); font-size:10px; letter-spacing:.32em; color:var(--ink-3); text-transform:uppercase; }
+.brand-text strong { font-size:15px; font-weight:700; letter-spacing:.1em; }
+
+.side-head { display:flex; align-items:center; justify-content:space-between; font-size:12px; color:var(--ink-2); padding:0 4px; }
+.side-head b { color:var(--accent); font-family:var(--mono); }
+.mini-btn { background:transparent; border:1px solid var(--border); color:var(--ink-2);
+  border-radius:999px; padding:3px 10px; font-size:11px; }
+.mini-btn:hover { border-color:var(--accent-dim); color:var(--accent); }
+
+/* ⑤ 관심종목 라이브 행 — 시세·등락·스파크·신호 뱃지를 행 안에 담는다 */
+.watch-block { display:flex; flex-direction:column; gap:10px; position:relative; }
+#watchlistList { display:flex; flex-direction:column; gap:5px; }
+.watch-row { display:grid; grid-template-columns:auto 1fr auto; grid-template-rows:auto auto;
+  column-gap:10px; row-gap:2px; align-items:center;
+  padding:8px 11px; border-radius:var(--r-md); background:var(--surface-2);
+  border:1px solid transparent; text-align:left; color:var(--ink); width:100%; }
+.watch-row:hover { border-color:var(--border-2); }
+.watch-row.current { border-color:color-mix(in srgb,var(--accent) 40%,transparent);
+  background:color-mix(in srgb,var(--accent) 8%,var(--surface-2)); }
+.watch-badge { grid-row:1/3; width:28px; height:28px; border-radius:var(--r-sm); display:grid; place-items:center;
+  font-family:var(--mono); font-size:11px; font-weight:600; background:var(--surface-3); color:var(--ink-2); }
+.watch-row.current .watch-badge { background:var(--accent-dim); color:var(--accent); }
+.watch-name { display:flex; align-items:center; gap:6px; min-width:0; }
+.watch-name strong { font-size:12.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.sig-tag { font-size:9px; font-weight:700; font-family:var(--mono); letter-spacing:.06em;
+  padding:1px 6px; border-radius:4px; flex:0 0 auto; }
+.sig-tag.buy  { color:var(--bull); background:color-mix(in srgb,var(--bull) 14%,transparent); }
+.sig-tag.sell { color:var(--bear); background:color-mix(in srgb,var(--bear) 14%,transparent); }
+.watch-price { grid-column:2; display:flex; gap:7px; align-items:baseline;
+  font-family:var(--mono); font-size:10.5px; font-variant-numeric:tabular-nums; color:var(--ink-3); }
+.watch-price b { font-weight:500; color:var(--ink-2); }
+.watch-spark { grid-row:1/3; grid-column:3; width:52px; height:26px; }
+.watch-spark polyline { fill:none; stroke-width:1.5; }
+
+#nav { display:flex; flex-direction:column; gap:4px; }
+.nav-group { font-family:var(--mono); font-size:9.5px; font-weight:600; letter-spacing:.16em;
+  text-transform:uppercase; color:var(--ink-3); padding:14px 12px 5px; }
+.nav-group:first-child { padding-top:2px; }
+.nav-item { display:flex; align-items:center; gap:11px; padding:10px 13px; border-radius:var(--r-md);
+  background:transparent; border:1px solid transparent; color:var(--ink-2);
+  font-size:13.5px; font-weight:500; text-align:left; }
+.nav-item svg { width:18px; height:18px; flex:0 0 auto; }
+.nav-item:hover { background:var(--surface-2); color:var(--ink); }
+.nav-item.active { background:color-mix(in srgb,var(--accent) 11%,transparent);
+  border-color:color-mix(in srgb,var(--accent) 34%,transparent); color:var(--accent); }
+
+.disclaimer { margin-top:auto; display:flex; gap:9px; font-size:11px; line-height:1.6;
+  color:var(--ink-3); padding:12px 4px 0; border-top:1px solid var(--border); }
+.disclaimer svg { width:15px; height:15px; flex:0 0 auto; margin-top:1px; }
+
+/* ══════════════ 메인 ══════════════ */
+#main { display:flex; flex-direction:column; min-width:0; min-height:0; }
+#topline { display:flex; align-items:center; gap:12px; padding:12px 30px;
+  border-bottom:1px solid var(--border); background:color-mix(in srgb,var(--surface-1) 55%,transparent); }
+.symbol-btn { display:flex; align-items:center; gap:10px; padding:7px 12px 7px 14px;
+  border-radius:var(--r-md); background:var(--surface-2); border:1px solid var(--border); color:var(--ink); }
+.symbol-btn:hover { border-color:var(--accent-dim); background:var(--surface-3); }
+.sb-sym { font-family:var(--mono); font-size:13.5px; font-weight:600; white-space:nowrap; }
+.sb-name { font-size:11.5px; color:var(--ink-3); white-space:nowrap; }
+.sb-key { font-family:var(--mono); font-size:9.5px; letter-spacing:.06em; padding:3px 6px;
+  border-radius:5px; background:var(--surface-3); border:1px solid var(--border-2); color:var(--ink-3); }
+.segmented { display:flex; gap:3px; padding:4px; background:var(--surface-1);
+  border:1px solid var(--border); border-radius:var(--r-md); }
+.segmented button { background:transparent; border:none; color:var(--ink-2);
+  padding:7px 15px; border-radius:var(--r-sm); font-size:12.5px; font-weight:500; }
+.segmented button.active { background:color-mix(in srgb,var(--accent) 14%,transparent); color:var(--accent); font-weight:600; }
+.top-spacer { flex:1; }
+.feed-state { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--accent);
+  font-weight:600; letter-spacing:.04em; }
+.feed-state svg { width:15px; height:15px; }
+.feed-time { display:flex; align-items:center; gap:8px; color:var(--ink-3);
+  font-family:var(--mono); font-size:11.5px; }
+.feed-time svg { width:15px; height:15px; }
+.icon-btn { background:var(--surface-2); border:1px solid var(--border); color:var(--ink-2);
+  border-radius:var(--r-md); width:34px; height:34px; display:grid; place-items:center; position:relative; }
+.icon-btn svg { width:16px; height:16px; }
+.icon-btn:hover { color:var(--accent); border-color:var(--accent-dim); }
+/* ⑥ 알림 벨 — 새 신호가 있으면 점이 붙는다 */
+.bell-dot { position:absolute; top:7px; right:7px; width:7px; height:7px; border-radius:50%;
+  background:var(--bear); box-shadow:0 0 0 2px var(--surface-2); }
+.account-btn { display:flex; align-items:center; gap:7px; padding:7px 13px; border-radius:var(--r-md);
+  background:var(--surface-2); border:1px solid var(--accent-dim); color:var(--accent);
+  font-size:12.5px; font-weight:600; }
+.account-btn svg { width:16px; height:16px; }
+
+#viewport { flex:1; overflow-y:auto; padding:26px 30px 60px; }
+.view { display:flex; flex-direction:column; gap:16px; max-width:1580px; }
+
+/* ══════════════ 카드 공통 ══════════════ */
+.card { background:var(--surface-1); border:1px solid var(--border); border-radius:var(--r-lg);
+  padding:20px 22px; display:flex; flex-direction:column; gap:14px; min-width:0; position:relative; }
+.card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:14px; }
+.card-head h2 { font-size:19px; font-weight:600; margin-top:3px; }
+.regime-pill { font-size:11px; font-weight:600; padding:5px 12px; border-radius:999px;
+  background:var(--surface-3); color:var(--ink-2); border:1px solid var(--border-2); white-space:nowrap; }
+.regime-pill.bull { color:var(--bull); border-color:color-mix(in srgb,var(--bull) 40%,transparent);
+  background:color-mix(in srgb,var(--bull) 11%,transparent); }
+.live-dot { width:7px; height:7px; border-radius:50%; background:var(--accent); display:inline-block;
+  box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 18%,transparent); }
+
+/* ══════════════ 판정 히어로 ══════════════ */
+.verdict-card { position:relative; overflow:hidden; display:flex; flex-direction:column; gap:18px;
+  padding:28px 32px 22px; border-radius:var(--r-lg);
+  background:linear-gradient(115deg,var(--surface-2) 0%,var(--surface-1) 62%);
+  border:1px solid var(--border); border-left:3px solid var(--bull); }
+.verdict-top { display:flex; align-items:center; justify-content:space-between; gap:30px; }
+.verdict-body { display:flex; flex-direction:column; gap:9px; position:relative; z-index:1; }
+.verdict-word { font-size:44px; font-weight:700; line-height:1.05; color:var(--bull); }
+.verdict-sub { color:var(--ink-2); font-size:13px; }
+.verdict-price { text-align:right; display:flex; flex-direction:column; gap:5px; align-items:flex-end;
+  position:relative; z-index:1; }
+.verdict-price .eyebrow { justify-content:flex-end; }
+.price-value { font-family:var(--mono); font-size:33px; font-weight:600; letter-spacing:-.02em;
+  font-variant-numeric:tabular-nums; }
+.delta { font-family:var(--mono); font-size:12.5px; font-variant-numeric:tabular-nums; }
+#heroSpark { position:absolute; inset:0 0 0 auto; width:55%; height:100%; opacity:.22; pointer-events:none; }
+
+/* ① 멀티 타임프레임 합의 스트립 */
+.mtf-strip { position:relative; z-index:1; display:flex; align-items:center; gap:10px; flex-wrap:wrap;
+  padding-top:16px; border-top:1px solid var(--border); }
+.mtf-label { font-size:11.5px; color:var(--ink-3); margin-right:2px; }
+.mtf-cell { display:flex; align-items:center; gap:8px; padding:7px 13px; border-radius:var(--r-md);
+  background:var(--surface-1); border:1px solid var(--border); font-size:12px; color:var(--ink-2); }
+.mtf-cell .tf { font-family:var(--mono); font-size:10.5px; color:var(--ink-3); }
+.mtf-cell .vd { font-weight:600; }
+.mtf-cell .pt { font-family:var(--mono); font-size:10.5px; color:var(--ink-3); font-variant-numeric:tabular-nums; }
+.mtf-cell.bull .vd { color:var(--bull); }
+.mtf-cell.bear .vd { color:var(--bear); }
+.mtf-cell.is-current { border-color:color-mix(in srgb,var(--accent) 45%,transparent);
+  background:color-mix(in srgb,var(--accent) 8%,var(--surface-1)); }
+.mtf-sum { margin-left:auto; font-size:11.5px; color:var(--ink-2); }
+.mtf-sum b { color:var(--bull); }
+
+/* ══════════════ 본문 그리드 ══════════════ */
+.overview-grid { display:grid; grid-template-columns:minmax(0,1.62fr) minmax(340px,1fr); gap:16px; align-items:start; }
+.overview-side { display:flex; flex-direction:column; gap:16px; min-width:0; }
+
+/* 차트 카드 */
+.legend { display:flex; gap:16px; list-style:none; margin:0; padding:0; flex-wrap:wrap; }
+.legend li { display:flex; align-items:center; gap:6px; font-size:11.5px; color:var(--ink-2); }
+.legend i { width:8px; height:8px; border-radius:50%; display:block; }
+.chart-wrap { position:relative; }
+#chartSvg { width:100%; height:auto; display:block; cursor:crosshair; }
+#chartSvg text { font-family:var(--mono); font-size:9px; fill:var(--ink-3); }
+#chartSvg .serieslabel { font-size:9.5px; font-weight:600; }
+#chartReadout { position:absolute; top:8px; left:8px; background:color-mix(in srgb,var(--surface-3) 92%,transparent);
+  border:1px solid var(--border-2); border-radius:var(--r-sm); padding:7px 10px;
+  font-family:var(--mono); font-size:10.5px; line-height:1.65; white-space:pre; pointer-events:none; display:none; }
+
+/* ② 점수 근거 체크리스트 */
+.score-head { display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.score-big { display:flex; align-items:baseline; gap:6px; font-family:var(--mono); }
+.score-big strong { font-size:30px; font-weight:600; color:var(--bull); font-variant-numeric:tabular-nums; }
+.score-big span { font-size:12px; color:var(--ink-3); }
+.evi-list { display:flex; flex-direction:column; }
+.evi-row { display:flex; align-items:center; gap:10px; padding:8px 0; border-bottom:1px solid var(--border);
+  font-size:12.5px; color:var(--ink); }
+.evi-row:last-child { border-bottom:none; }
+.evi-row .tick { width:17px; height:17px; border-radius:50%; display:grid; place-items:center; flex:0 0 auto;
+  background:color-mix(in srgb,var(--bull) 14%,transparent); color:var(--bull); }
+.evi-row .tick svg { width:11px; height:11px; }
+.evi-row .pts { margin-left:auto; font-family:var(--mono); font-size:12px; font-weight:600;
+  color:var(--bull); font-variant-numeric:tabular-nums; }
+.evi-row.off { color:var(--ink-3); }
+.evi-row.off .tick { background:var(--surface-3); color:var(--ink-3); }
+.evi-row.off .pts { color:var(--ink-3); font-weight:400; }
+.evi-more { background:transparent; border:none; color:var(--ink-3); font-size:11.5px;
+  padding:8px 0 0; text-align:left; }
+.evi-more:hover { color:var(--accent); }
+
+/* ③ 가격 사다리 — 진입·TP·SL 을 실제 가격 축 위에 놓는다 */
+.ladder { position:relative; height:64px; margin:8px 2px 2px; }
+.ladder-track { position:absolute; left:0; right:0; top:30px; height:4px; border-radius:999px; background:var(--surface-3); }
+.ladder-zone { position:absolute; top:30px; height:4px; border-radius:999px; }
+.ladder-zone.gain { background:color-mix(in srgb,var(--bull) 45%,transparent); }
+.ladder-zone.loss { background:color-mix(in srgb,var(--bear) 45%,transparent); }
+.ladder-pt { position:absolute; top:0; transform:translateX(-50%); display:flex; flex-direction:column;
+  align-items:center; gap:3px; }
+.ladder-pt .lp-name { font-size:10px; font-weight:600; color:var(--ink-2); white-space:nowrap; }
+.ladder-pt .lp-dot { width:10px; height:10px; border-radius:50%; border:2px solid var(--surface-1); }
+.ladder-pt .lp-val { font-family:var(--mono); font-size:10px; color:var(--ink-3);
+  font-variant-numeric:tabular-nums; white-space:nowrap; }
+.ladder-pt.entry .lp-dot { background:var(--ink); }
+.ladder-pt.tp .lp-dot { background:var(--bull); }
+.ladder-pt.sl .lp-dot { background:var(--bear); }
+.ladder-pt.entry .lp-name { color:var(--ink); }
+.rr-row { display:flex; gap:8px; flex-wrap:wrap; }
+.rr-pill { font-family:var(--mono); font-size:11px; padding:4px 11px; border-radius:999px;
+  background:var(--surface-2); border:1px solid var(--border); color:var(--ink-2); }
+.rr-pill b { color:var(--ink); font-weight:600; }
+
+/* ④ 최근 신호 성적 */
+.hist-stats { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:12px; }
+.hist-stat { background:var(--surface-2); border:1px solid var(--border); border-radius:var(--r-md);
+  padding:12px 14px; display:flex; flex-direction:column; gap:3px; }
+.hist-stat .hs-val { font-family:var(--mono); font-size:21px; font-weight:600; font-variant-numeric:tabular-nums; }
+.hist-stat .hs-label { font-size:11px; color:var(--ink-3); }
+.table-wrap { overflow-x:auto; }
+table.data { width:100%; border-collapse:collapse; font-size:12.5px; }
+table.data th { text-align:left; font-weight:500; color:var(--ink-3); font-size:10px;
+  letter-spacing:.08em; text-transform:uppercase; padding:0 10px 10px; white-space:nowrap; }
+table.data td { padding:10px; border-top:1px solid var(--border); white-space:nowrap; }
+table.data td.num, table.data th.num { text-align:right; font-family:var(--mono); font-variant-numeric:tabular-nums; }
+.oc-tag { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:600;
+  padding:3px 10px; border-radius:999px; }
+.oc-tag.tp   { color:var(--bull); background:color-mix(in srgb,var(--bull) 12%,transparent); }
+.oc-tag.sl   { color:var(--bear); background:color-mix(in srgb,var(--bear) 12%,transparent); }
+.oc-tag.time { color:var(--ink-3); background:var(--surface-3); }
+.oc-tag.open { color:var(--warn); background:color-mix(in srgb,var(--warn) 12%,transparent); }
+
+/* ══════════════ 개선 포인트 주석 ══════════════
+   목업 전용 장치 — 본 구현에는 들어가지 않는다. */
+.note-badge { position:absolute; z-index:20; width:22px; height:22px; border-radius:50%;
+  display:grid; place-items:center; font-family:var(--mono); font-size:11.5px; font-weight:700;
+  background:var(--note); color:#0D1519; border:2px solid var(--surface-1);
+  box-shadow:var(--shadow-pop); pointer-events:none; }
+body:not(.notes-on) .note-badge, body:not(.notes-on) #notesPanel { display:none; }
+#notesToggle { position:fixed; right:22px; bottom:22px; z-index:60; display:flex; align-items:center;
+  gap:8px; padding:11px 17px; border-radius:999px; background:var(--note); color:#0D1519;
+  border:none; font-size:12.5px; font-weight:700; box-shadow:var(--shadow-pop); }
+#notesPanel { position:fixed; right:22px; bottom:74px; z-index:59; width:330px; max-height:60vh;
+  overflow-y:auto; background:var(--surface-1); border:1px solid var(--border-2);
+  border-radius:var(--r-lg); padding:18px 20px; box-shadow:var(--shadow-pop);
+  display:flex; flex-direction:column; gap:12px; }
+#notesPanel h3 { font-size:14px; }
+.np-item { display:flex; gap:10px; font-size:12px; color:var(--ink-2); line-height:1.6; }
+.np-item .np-n { flex:0 0 auto; width:20px; height:20px; border-radius:50%; display:grid; place-items:center;
+  font-family:var(--mono); font-size:10.5px; font-weight:700; background:var(--note); color:#0D1519; margin-top:1px; }
+.np-item b { color:var(--ink); }
+
+::-webkit-scrollbar { width:9px; height:9px; }
+::-webkit-scrollbar-track { background:transparent; }
+::-webkit-scrollbar-thumb { background:var(--border-2); border-radius:5px; }
+
+@media (prefers-reduced-motion:reduce) { * { transition:none!important; animation:none!important; } }
+@media (max-width:1280px) {
+  .overview-grid { grid-template-columns:1fr; }
+  .hist-stats { grid-template-columns:repeat(3,minmax(0,1fr)); }
+}
+@media (max-width:900px) {
+  #shell { grid-template-columns:1fr; }
+  #sidebar { display:none; }
+  #viewport { padding:18px; }
+  .verdict-top { flex-direction:column; align-items:flex-start; gap:18px; }
+  .verdict-price { text-align:left; align-items:flex-start; }
+  .verdict-price .eyebrow { justify-content:flex-start; }
+  .mtf-sum { margin-left:0; width:100%; }
+  .hist-stats { grid-template-columns:1fr; }
+}
+</style>
+</head>
+<body class="notes-on">
+
+<div id="shell">
+
+  <!-- ══════════════ 사이드바 ══════════════ -->
+  <aside id="sidebar">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <rect x="2" y="19" width="6" height="11" rx="1.5"/>
+        <rect x="11" y="13" width="6" height="17" rx="1.5"/>
+        <rect x="20" y="7" width="6" height="23" rx="1.5"/>
+        <path d="M3 14 L13 8 L22 11 L30 2"/>
+      </svg>
+      <div class="brand-text"><span>SMART</span><strong>SIGNAL</strong></div>
+    </div>
+
+    <div class="watch-block">
+      <span class="note-badge" style="top:-6px; right:-6px;">5</span>
+      <div class="side-head">
+        <span>관심 종목 <b>5</b>개</span>
+        <button class="mini-btn">＋ 종목 추가</button>
+      </div>
+      <div id="watchlistList"></div>
+    </div>
+
+    <nav id="nav">
+      <p class="nav-group">분석</p>
+      <button class="nav-item active">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        개요
+      </button>
+      <button class="nav-item">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/><circle cx="9" cy="6" r="2.4"/><circle cx="15" cy="12" r="2.4"/><circle cx="7" cy="18" r="2.4"/></svg>
+        신호 장부
+      </button>
+      <p class="nav-group">발굴</p>
+      <button class="nav-item">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+        스크리너
+      </button>
+      <button class="nav-item">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 18L9 12l4 3 7-8"/><path d="M20 7h-4M20 7v4"/></svg>
+        백테스트
+      </button>
+      <p class="nav-group">설정</p>
+      <button class="nav-item">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h10M18 8h2M4 16h4M12 16h8"/><circle cx="16" cy="8" r="2.4"/><circle cx="10" cy="16" r="2.4"/></svg>
+        표시 설정
+      </button>
+    </nav>
+
+    <p class="disclaimer">
+      <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 16v-4M12 8.5v.01"/></svg>
+      이 화면은 분석 보조 도구이며, 자동 주문을 실행하지 않습니다.
+    </p>
+  </aside>
+
+  <!-- ══════════════ 메인 ══════════════ -->
+  <div id="main">
+
+    <header id="topline">
+      <button class="symbol-btn" title="종목 바꾸기 (Ctrl+K)">
+        <span class="sb-sym">BTC/USDT</span>
+        <span class="sb-name">비트코인 · Binance</span>
+        <kbd class="sb-key">Ctrl K</kbd>
+      </button>
+      <div class="segmented" role="group" aria-label="시간 단위">
+        <button>15분</button>
+        <button class="active">1시간</button>
+        <button>4시간</button>
+        <button>1일</button>
+      </div>
+      <div class="top-spacer"></div>
+      <div class="feed-state">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12.5a10 10 0 0 1 14 0M8.5 16a5.5 5.5 0 0 1 7 0"/><circle cx="12" cy="19.5" r="1.2"/></svg>
+        <span>실시간</span>
+      </div>
+      <div class="feed-time">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7.5V12l3 2"/></svg>
+        <span>22:41:05</span>
+      </div>
+      <button class="icon-btn" title="신호 알림" style="position:relative;">
+        <span class="note-badge" style="top:-12px; right:-12px;">6</span>
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 10a6 6 0 0 1 12 0c0 4 1.6 5.4 2.2 6H3.8C4.4 15.4 6 14 6 10z"/><path d="M10 19a2.2 2.2 0 0 0 4 0"/></svg>
+        <span class="bell-dot" aria-label="새 알림 있음"></span>
+      </button>
+      <button class="icon-btn" id="themeBtn" title="라이트/다크 전환">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 13.5A8 8 0 1 1 10.5 4a6.5 6.5 0 0 0 9.5 9.5z"/></svg>
+      </button>
+      <button class="account-btn" title="계정">
+        <svg class="icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="8.2" r="3.4"/><path d="M4.8 19.5a7.2 7.2 0 0 1 14.4 0"/></svg>
+        <span>bom</span>
+      </button>
+    </header>
+
+    <div id="viewport">
+      <section class="view">
+
+        <!-- ─── 판정 히어로 + MTF 합의 ─── -->
+        <article class="verdict-card">
+          <svg id="heroSpark" preserveAspectRatio="none" aria-hidden="true"></svg>
+          <div class="verdict-top">
+            <div class="verdict-body">
+              <p class="eyebrow">MARKET CONTROL DESK <span class="sep">/</span> 1시간</p>
+              <h1 class="verdict-word">매수 우위</h1>
+              <p class="verdict-sub">신뢰 점수 14 / 22 · 추세장 · Range Filter 상승 유지</p>
+            </div>
+            <div class="verdict-price">
+              <p class="eyebrow">BTC/USDT · BINANCE</p>
+              <strong class="price-value">114,382.50</strong>
+              <p class="delta up">▲ +1,398.20 (+1.24%) · 24시간</p>
+            </div>
+          </div>
+          <div class="mtf-strip">
+            <span class="note-badge" style="top:6px; left:-14px;">1</span>
+            <span class="mtf-label">시간대 합의</span>
+            <div class="mtf-cell"><span class="tf">15분</span><span class="vd">관망</span><span class="pt">3점</span></div>
+            <div class="mtf-cell bull is-current"><span class="tf">1시간</span><span class="vd">매수 우위</span><span class="pt">14점</span></div>
+            <div class="mtf-cell bull"><span class="tf">4시간</span><span class="vd">적극 매수</span><span class="pt">16점</span></div>
+            <div class="mtf-cell bull"><span class="tf">1일</span><span class="vd">매수 우위</span><span class="pt">12점</span></div>
+            <span class="mtf-sum"><b>4개 중 3개 시간대</b>가 매수 방향으로 정렬</span>
+          </div>
+        </article>
+
+        <!-- ─── 차트 + 근거·수준 ─── -->
+        <div class="overview-grid">
+
+          <article class="card">
+            <header class="card-head">
+              <div>
+                <p class="eyebrow">EVIDENCE TRACE <span class="sep">·</span> 가격 <span class="sep">·</span> 추세 <span class="sep">·</span> 변동성</p>
+                <h2>시장 구조</h2>
+                <p class="card-sub">캔들 위에 활성 레이어와 신호 발생 지점을 함께 표시합니다.</p>
+              </div>
+              <span class="regime-pill bull">추세장 · ADX 31.2</span>
+            </header>
+            <ul class="legend">
+              <li><i style="background:var(--ink)"></i>가격</li>
+              <li><i style="background:var(--s-ema)"></i>EMA 21</li>
+              <li><i style="background:var(--s-vwap)"></i>VWAP</li>
+              <li><i style="background:var(--s-rf)"></i>Range Filter</li>
+              <li><i style="background:var(--bull)"></i>▲ 매수 신호</li>
+            </ul>
+            <div class="chart-wrap">
+              <svg id="chartSvg" viewBox="0 0 760 470" aria-label="BTC/USDT 1시간 캔들 차트 (목업 데이터)"></svg>
+              <div id="chartReadout"></div>
+            </div>
+          </article>
+
+          <div class="overview-side">
+
+            <!-- ② 점수 근거 체크리스트 -->
+            <article class="card">
+              <span class="note-badge" style="top:-8px; left:-8px;">2</span>
+              <header class="card-head">
+                <div>
+                  <p class="eyebrow"><span class="live-dot"></span> 현재 종합 신호</p>
+                  <h2>왜 매수 우위인가</h2>
+                </div>
+                <div class="score-big"><strong>14</strong><span>/ 22</span></div>
+              </header>
+              <div class="evi-list">
+                <div class="evi-row">
+                  <span class="tick"><svg class="icon" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+                  MACD 상승 전환 <span class="pts">+3</span>
+                </div>
+                <div class="evi-row">
+                  <span class="tick"><svg class="icon" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+                  OBV 매수 다이버전스 <span class="pts">+3</span>
+                </div>
+                <div class="evi-row">
+                  <span class="tick"><svg class="icon" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+                  VWAP 상방 복귀 <span class="pts">+2</span>
+                </div>
+                <div class="evi-row">
+                  <span class="tick"><svg class="icon" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+                  EMA 정배열 <span class="pts">+2</span>
+                </div>
+                <div class="evi-row">
+                  <span class="tick"><svg class="icon" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+                  피보나치 0.618 지지 <span class="pts">+2</span>
+                </div>
+                <div class="evi-row">
+                  <span class="tick"><svg class="icon" viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>
+                  스토캐스틱 과매도 반등 <span class="pts">+2</span>
+                </div>
+                <div class="evi-row off">
+                  <span class="tick"><svg class="icon" viewBox="0 0 24 24"><path d="M7 12h10"/></svg></span>
+                  고래 매집 (거래량 급증) <span class="pts">0/3</span>
+                </div>
+                <div class="evi-row off">
+                  <span class="tick"><svg class="icon" viewBox="0 0 24 24"><path d="M7 12h10"/></svg></span>
+                  RSI 과매도 <span class="pts">0/2</span>
+                </div>
+              </div>
+              <button class="evi-more">미충족 조건 5개 더 보기 ▾</button>
+              <p class="fine">추세장이므로 원점수를 그대로 반영했습니다. 횡보장에서는 60%로 감액됩니다.</p>
+            </article>
+
+            <!-- ③ 가격 사다리 -->
+            <article class="card">
+              <span class="note-badge" style="top:-8px; left:-8px;">3</span>
+              <header class="card-head">
+                <div>
+                  <p class="eyebrow">가격 장부</p>
+                  <h2>참고 수준</h2>
+                </div>
+              </header>
+              <div class="ladder">
+                <div class="ladder-track"></div>
+                <!-- 축: 111,500 ~ 119,200 -->
+                <div class="ladder-zone loss" style="left:15.1%; width:22.4%;"></div>
+                <div class="ladder-zone gain" style="left:37.5%; width:50.5%;"></div>
+                <div class="ladder-pt sl" style="left:15.1%;">
+                  <span class="lp-name">손절 SL</span><span class="lp-dot"></span><span class="lp-val">112,660</span>
+                </div>
+                <div class="ladder-pt entry" style="left:37.5%;">
+                  <span class="lp-name">진입가</span><span class="lp-dot"></span><span class="lp-val">114,382</span>
+                </div>
+                <div class="ladder-pt tp" style="left:64.2%;">
+                  <span class="lp-name">목표 TP1</span><span class="lp-dot"></span><span class="lp-val">116,440</span>
+                </div>
+                <div class="ladder-pt tp" style="left:88%;">
+                  <span class="lp-name">목표 TP2</span><span class="lp-dot"></span><span class="lp-val">118,270</span>
+                </div>
+              </div>
+              <div class="rr-row">
+                <span class="rr-pill">TP1 손익비 <b>1 : 1.2</b></span>
+                <span class="rr-pill">TP2 손익비 <b>1 : 2.3</b></span>
+                <span class="rr-pill">SL까지 <b>−1.5%</b></span>
+              </div>
+              <p class="fine">신호가 발생한 경우에만 TP·SL을 산출합니다. 실제 주문과 자동 연결되지 않습니다.</p>
+            </article>
+          </div>
+        </div>
+
+        <!-- ④ 최근 신호 성적 -->
+        <article class="card">
+          <span class="note-badge" style="top:-8px; left:-8px;">4</span>
+          <header class="card-head">
+            <div>
+              <p class="eyebrow">SIGNAL TRACK RECORD <span class="sep">/</span> BTC/USDT · 1시간</p>
+              <h2>이 종목에서 신호가 맞았는가</h2>
+              <p class="card-sub">최근 신호 20건을 백테스트 규칙(TP/SL/48봉 만료)으로 자동 채점한 결과입니다.</p>
+            </div>
+            <span class="regime-pill">최근 30일</span>
+          </header>
+          <div class="hist-stats">
+            <div class="hist-stat"><span class="hs-val up">62%</span><span class="hs-label">TP 도달률 (20건 중 13건)</span></div>
+            <div class="hist-stat"><span class="hs-val up">+0.9%</span><span class="hs-label">신호당 평균 손익 (수수료 0.1% 차감)</span></div>
+            <div class="hist-stat"><span class="hs-val">7점↑</span><span class="hs-label">이 종목에서 성적이 가장 좋은 점수대</span></div>
+          </div>
+          <div class="table-wrap">
+            <table class="data">
+              <thead>
+                <tr><th>발생 시각</th><th>신호</th><th class="num">점수</th><th class="num">진입가</th><th>결과</th><th class="num">손익</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td class="mono mut">08-24 13:00</td><td class="up">매수 우위</td><td class="num">14</td>
+                  <td class="num">113,240</td><td><span class="oc-tag open">● 진행 중 · 12봉째</span></td><td class="num up">+1.0%</td>
+                </tr>
+                <tr>
+                  <td class="mono mut">08-22 14:00</td><td class="up">매수 우위</td><td class="num">12</td>
+                  <td class="num">109,810</td><td><span class="oc-tag tp">TP1 도달</span></td><td class="num up">+1.8%</td>
+                </tr>
+                <tr>
+                  <td class="mono mut">08-21 09:00</td><td class="up">적극 매수</td><td class="num">15</td>
+                  <td class="num">107,420</td><td><span class="oc-tag tp">TP2 도달</span></td><td class="num up">+3.4%</td>
+                </tr>
+                <tr>
+                  <td class="mono mut">08-19 22:00</td><td class="dn">매도 우위</td><td class="num">9</td>
+                  <td class="num">108,930</td><td><span class="oc-tag sl">SL 이탈</span></td><td class="num dn">−1.2%</td>
+                </tr>
+                <tr>
+                  <td class="mono mut">08-18 11:00</td><td class="up">매수 우위</td><td class="num">11</td>
+                  <td class="num">106,180</td><td><span class="oc-tag time">48봉 만료</span></td><td class="num up">+0.4%</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p class="fine">과거 성적이 미래 수익을 보장하지 않습니다. 백테스트 화면과 같은 규칙으로 계산합니다.</p>
+        </article>
+
+      </section>
+    </div><!-- /viewport -->
+  </div><!-- /main -->
+</div><!-- /shell -->
+
+<!-- ══════════════ 개선 포인트 패널 (목업 전용) ══════════════ -->
+<button id="notesToggle" aria-pressed="true">✎ 개선 포인트 <b id="notesState">켬</b></button>
+<aside id="notesPanel" aria-label="개선 포인트 설명">
+  <h3>이 목업에서 달라진 것</h3>
+  <div class="np-item"><span class="np-n">1</span><p><b>시간대 합의 스트립.</b> 히어로 판정 아래에 15분·1시간·4시간·1일 판정을 나란히 보여, 지금 보는 신호가 다른 시간대와 정렬되는지 한눈에 확인한다.</p></div>
+  <div class="np-item"><span class="np-n">2</span><p><b>점수 근거 체크리스트.</b> "14 / 22"가 어디서 나온 숫자인지 — 어떤 조건이 몇 점을 채웠고 무엇이 미충족인지 — 게이지 대신 조건 단위로 펼쳐 보여준다.</p></div>
+  <div class="np-item"><span class="np-n">3</span><p><b>가격 사다리.</b> TP·SL을 글줄 목록 대신 실제 가격 축 위에 놓고, 손익비(RR)를 함께 계산해 붙인다.</p></div>
+  <div class="np-item"><span class="np-n">4</span><p><b>최근 신호 성적.</b> 이 종목·이 시간대에서 과거 신호가 실제로 맞았는지 자동 채점해 개요 화면에 보여준다. 백테스트와 같은 규칙을 쓴다.</p></div>
+  <div class="np-item"><span class="np-n">5</span><p><b>관심종목 라이브 행.</b> 사이드바 각 행에 현재가·24시간 등락·미니 스파크·신호 뱃지를 담아, 클릭하지 않고도 훑을 수 있게 한다.</p></div>
+  <div class="np-item"><span class="np-n">6</span><p><b>신호 알림 벨.</b> 관심종목에 새 신호(5점 이상)가 뜨면 상단 벨에 표시가 붙는다. 누르면 최근 알림 목록.</p></div>
+  <p class="fine">지표 타일·관측 카드 등 그대로 유지되는 요소는 이 목업에서 생략했습니다. 자세한 구현 노트는 HANDOFF.md 참고.</p>
+</aside>
+
+<script>
+/* ═══════════════ 목업 전용 스크립트 ═══════════════
+   실데이터·API 호출 없음. 시드 고정 난수로 그럴듯한 시세를 만들어
+   차트·스파크라인을 그리고, 테마/주석 토글만 동작한다. */
+"use strict";
+
+/* 시드 고정 난수 — 열 때마다 같은 그림이 나오게 */
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;}}
+
+/* URL 해시로 미리보기 상태 지정 — #light(라이트 테마), #clean(주석 숨김) */
+if(location.hash.includes("light")) document.documentElement.dataset.theme="light";
+if(location.hash.includes("clean")) document.body.classList.remove("notes-on");
+document.addEventListener("DOMContentLoaded",()=>{
+  const on=document.body.classList.contains("notes-on");
+  document.getElementById("notesToggle").setAttribute("aria-pressed",String(on));
+  document.getElementById("notesState").textContent=on?"켬":"끔";
+});
+
+/* ─── 테마 · 주석 토글 ─── */
+document.getElementById("themeBtn").addEventListener("click",()=>{
+  const r=document.documentElement;
+  r.dataset.theme=r.dataset.theme==="light"?"":"light";
+});
+const notesToggle=document.getElementById("notesToggle");
+notesToggle.addEventListener("click",()=>{
+  const on=document.body.classList.toggle("notes-on");
+  notesToggle.setAttribute("aria-pressed",String(on));
+  document.getElementById("notesState").textContent=on?"켬":"끔";
+});
+
+/* ─── 사이드바 관심종목 (⑤) ─── */
+const WATCH=[
+  {sym:"BTC",name:"BTC/USDT",price:"114,382",delta:"+1.24%",up:true, sig:"매수", current:true, seed:11},
+  {sym:"ETH",name:"ETH/USDT",price:"4,268.4",delta:"+0.82%",up:true, sig:null, seed:22},
+  {sym:"SOL",name:"SOL/USDT",price:"182.55",delta:"-2.13%",up:false,sig:"매도", seed:33},
+  {sym:"NVD",name:"NVDA · NASDAQ",price:"178.42",delta:"+0.31%",up:true, sig:null, seed:44},
+  {sym:"005",name:"삼성전자 · KRX",price:"71,300",delta:"-0.54%",up:false,sig:null, seed:55},
+];
+function sparkPts(seed,n,w,h,drift){
+  const rnd=mulberry32(seed); let v=h*0.55; const pts=[];
+  for(let i=0;i<n;i++){ v+=(rnd()-0.5+drift)*h*0.16; v=Math.max(h*0.08,Math.min(h*0.92,v));
+    pts.push((i/(n-1)*w).toFixed(1)+","+v.toFixed(1)); }
+  return pts.join(" ");
+}
+document.getElementById("watchlistList").innerHTML=WATCH.map(r=>`
+  <button class="watch-row${r.current?" current":""}">
+    <span class="watch-badge">${r.sym}</span>
+    <span class="watch-name"><strong>${r.name}</strong>${r.sig?`<span class="sig-tag ${r.sig==="매수"?"buy":"sell"}">${r.sig}</span>`:""}</span>
+    <span class="watch-price"><b>${r.price}</b><span class="${r.up?"up":"dn"}">${r.delta}</span></span>
+    <svg class="watch-spark" viewBox="0 0 52 26" preserveAspectRatio="none" aria-hidden="true">
+      <polyline points="${sparkPts(r.seed,24,52,26,r.up?0.035:-0.035)}"
+        style="stroke:${r.up?"var(--bull)":"var(--bear)"}"/>
+    </svg>
+  </button>`).join("");
+
+/* ─── 히어로 배경 스파크 ─── */
+(function(){
+  const svg=document.getElementById("heroSpark");
+  const w=600,h=160; svg.setAttribute("viewBox",`0 0 ${w} ${h}`);
+  svg.innerHTML=`<polyline points="${sparkPts(7,60,w,h,0.05)}"
+    style="fill:none;stroke:var(--bull);stroke-width:2"/>`;
+})();
+
+/* ─── 메인 캔들 차트 ───
+   60봉 랜덤워크 + EMA21 + VWAP 근사 + RF 계단선 + 매수 신호 표식 2개.
+   마우스를 올리면 세로 크로스헤어와 OHLC 리드아웃이 따라온다. */
+(function(){
+  const N=60, W=760, H=470, padL=8, padR=54, padT=14, padB=24;
+  const plotW=W-padL-padR, plotH=H-padT-padB;
+  const rnd=mulberry32(2024);
+
+  /* 봉 생성 — 뒤 1/3 구간에 상승 드리프트를 줘 "매수 우위" 화면과 맞춘다 */
+  const bars=[]; let close=109500;
+  for(let i=0;i<N;i++){
+    const drift=i>N*0.62?260:i>N*0.35?-60:40;
+    const o=close;
+    const c=o+drift+(rnd()-0.5)*1500;
+    const hi=Math.max(o,c)+rnd()*600, lo=Math.min(o,c)-rnd()*600;
+    bars.push({o,h:hi,l:lo,c}); close=c;
+  }
+  /* EMA21 */
+  const k=2/22; let e=bars[0].c; const ema=bars.map(b=>(e=b.c*k+e*(1-k)));
+  /* VWAP 근사 — 느린 EMA */
+  const kv=2/45; let vw=bars[0].c; const vwap=bars.map(b=>(vw=b.c*kv+vw*(1-kv)));
+  /* Range Filter — EMA에 밴드 오프셋을 준 계단선 근사 */
+  const rf=ema.map(v=>v-900);
+
+  let min=Infinity,max=-Infinity;
+  bars.forEach(b=>{min=Math.min(min,b.l);max=Math.max(max,b.h);});
+  min-=(max-min)*0.05; max+=(max-min)*0.05;
+  const X=i=>padL+(i+0.5)/N*plotW;
+  const Y=v=>padT+(1-(v-min)/(max-min))*plotH;
+  const cw=Math.max(3,plotW/N*0.62);
+
+  const svg=document.getElementById("chartSvg");
+  let out="";
+  /* 그리드 + 우측 가격 눈금 — 눈금은 성기게, 선은 후퇴색 */
+  for(let g=0;g<5;g++){
+    const v=min+(max-min)*g/4, y=Y(v);
+    out+=`<line x1="${padL}" y1="${y}" x2="${W-padR}" y2="${y}" stroke="var(--grid)" stroke-width="1"/>`;
+    out+=`<text x="${W-padR+6}" y="${y+3}">${Math.round(v).toLocaleString()}</text>`;
+  }
+  /* 캔들 — 몸통 사이 2px 여백은 cw 계수(0.62)로 확보 */
+  bars.forEach((b,i)=>{
+    const x=X(i), up=b.c>=b.o, col=up?"var(--bull)":"var(--bear)";
+    out+=`<line x1="${x}" y1="${Y(b.h)}" x2="${x}" y2="${Y(b.l)}" stroke="${col}" stroke-width="1"/>`;
+    const y1=Y(Math.max(b.o,b.c)), y2=Y(Math.min(b.o,b.c));
+    out+=`<rect x="${x-cw/2}" y="${y1}" width="${cw}" height="${Math.max(1.5,y2-y1)}" rx="1" fill="${col}"/>`;
+  });
+  const line=(arr,col,wd)=>`<polyline points="${arr.map((v,i)=>X(i).toFixed(1)+","+Y(v).toFixed(1)).join(" ")}"
+     fill="none" stroke="${col}" stroke-width="${wd}"/>`;
+  out+=line(ema,"var(--s-ema)",2)+line(vwap,"var(--s-vwap)",2)+line(rf,"var(--s-rf)",1.6);
+  /* 선 끝 직접 라벨 — 색만으로 시리즈를 구분하지 않기 위한 이중 부호화 */
+  const lastX=X(N-1)+8;
+  out+=`<text class="serieslabel" x="${lastX}" y="${Y(ema[N-1])-8}" fill="var(--s-ema)">EMA</text>`;
+  out+=`<text class="serieslabel" x="${lastX}" y="${Y(vwap[N-1])+16}" fill="var(--s-vwap)">VWAP</text>`;
+  out+=`<text class="serieslabel" x="${lastX}" y="${Y(rf[N-1])+24}" fill="var(--s-rf)">RF</text>`;
+  /* 매수 신호 표식 */
+  [{i:41,pts:12},{i:52,pts:14}].forEach(s=>{
+    const x=X(s.i), y=Y(bars[s.i].l)+14;
+    out+=`<path d="M${x} ${y-8} l6 9 h-12 z" fill="var(--bull)"/>`;
+    out+=`<text x="${x}" y="${y+13}" text-anchor="middle" fill="var(--bull)" font-weight="600">${s.pts}점</text>`;
+  });
+  /* 크로스헤어 (마지막에 그려 위에 오게) */
+  out+=`<line id="xhair" x1="0" y1="${padT}" x2="0" y2="${H-padB}" stroke="var(--ink-3)"
+     stroke-width="1" stroke-dasharray="3 3" style="display:none"/>`;
+  svg.innerHTML=out;
+
+  /* 호버 리드아웃 */
+  const readout=document.getElementById("chartReadout");
+  const xhair=svg.querySelector("#xhair");
+  const fmt=v=>Math.round(v).toLocaleString();
+  svg.addEventListener("mousemove",ev=>{
+    const r=svg.getBoundingClientRect();
+    const px=(ev.clientX-r.left)/r.width*W;
+    const i=Math.max(0,Math.min(N-1,Math.floor((px-padL)/plotW*N)));
+    const b=bars[i];
+    xhair.style.display="block";
+    xhair.setAttribute("x1",X(i)); xhair.setAttribute("x2",X(i));
+    readout.style.display="block";
+    readout.textContent=`시가 ${fmt(b.o)}\n고가 ${fmt(b.h)}\n저가 ${fmt(b.l)}\n종가 ${fmt(b.c)}\nEMA  ${fmt(ema[i])}`;
+  });
+  svg.addEventListener("mouseleave",()=>{
+    xhair.style.display="none"; readout.style.display="none";
+  });
+})();
+</script>
+</body>
+</html>
