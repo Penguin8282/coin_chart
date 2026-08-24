@@ -4,7 +4,8 @@ import numpy as np
 from . import indicators as ind
 
 
-def compute_signals(o, h, l, c, v, vol_len=20, fib_len=100, adx_thr=25.0):
+def compute_signals(o, h, l, c, v, vol_len=20, fib_len=100, adx_thr=25.0,
+                    tp_mode="pct", atr_tp_mult=2.2, atr_sl_mult=1.0):
     o, h, l, c, v = map(lambda a: np.asarray(a, dtype=float), (o, h, l, c, v))
     n = len(c)
     hlc3 = (h + l + c) / 3.0
@@ -130,10 +131,21 @@ def compute_signals(o, h, l, c, v, vol_len=20, fib_len=100, adx_thr=25.0):
     strong_sell = sell_score >= 7
     normal_sell = (sell_score >= 5) & (sell_score < 7)
 
-    tp_buy = np.where(strong_buy, c * 1.025, c * 1.020)
-    sl_buy = np.where(strong_buy, c * 0.988, c * 0.991)
-    tp_sell = np.where(strong_sell, c * 0.975, c * 0.980)
-    sl_sell = np.where(strong_sell, c * 1.012, c * 1.009)
+    # 손절·목표 계산 방식은 트레이딩 스타일의 문제라 사용자가 고른다.
+    #   pct — 진입가의 고정 비율. 종목·변동성과 무관하게 폭이 일정하다.
+    #   atr — ATR(14) 배수. 변동성이 큰 종목은 넓게, 조용한 종목은 좁게 잡힌다.
+    # 여기서 정한 값이 화면 표시와 백테스트 양쪽에 똑같이 쓰인다 — 화면 따로
+    # 백테스트 따로면 성적표가 거짓말이 된다.
+    if tp_mode == "atr":
+        tp_buy = c + atr * atr_tp_mult
+        sl_buy = c - atr * atr_sl_mult
+        tp_sell = c - atr * atr_tp_mult
+        sl_sell = c + atr * atr_sl_mult
+    else:
+        tp_buy = np.where(strong_buy, c * 1.025, c * 1.020)
+        sl_buy = np.where(strong_buy, c * 0.988, c * 0.991)
+        tp_sell = np.where(strong_sell, c * 0.975, c * 0.980)
+        sl_sell = np.where(strong_sell, c * 1.012, c * 1.009)
 
     series = {
         "ema9": e9, "ema21": e21, "ema55": e55, "ema200": e200,
@@ -174,6 +186,8 @@ def compute_signals(o, h, l, c, v, vol_len=20, fib_len=100, adx_thr=25.0):
         "vol_spike": bool(vol_spike[last]), "vol_ratio": float(vol_ratio[last]) if not np.isnan(vol_ratio[last]) else 0.0,
         "tp_buy": float(tp_buy[last]), "sl_buy": float(sl_buy[last]),
         "tp_sell": float(tp_sell[last]), "sl_sell": float(sl_sell[last]),
+        "tp_basis": tp_mode,
+        "atr": float(atr[last]) if np.isfinite(atr[last]) else 0.0,
     }
 
     return {"series": series, "events": events, "dashboard": dashboard}

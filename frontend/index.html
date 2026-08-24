@@ -500,6 +500,27 @@
               <label for="paramAdxThr">ADX 추세 기준</label>
               <input id="paramAdxThr" type="number" min="10" max="60" step="0.5" value="25" />
             </div>
+
+            <div class="param-row">
+              <label for="paramTpMode">손절·목표 계산 방식</label>
+              <select id="paramTpMode">
+                <option value="pct">퍼센트 — 진입가의 고정 비율</option>
+                <option value="atr">ATR 배수 — 변동성에 맞춰 조절</option>
+              </select>
+            </div>
+            <p class="fine" id="tpModeHint">
+              퍼센트: 강신호 +2.5%/−1.2%, 일반 +2.0%/−0.9%로 어느 종목이든 같은 폭.
+              ATR: 변동성이 큰 종목은 넓게, 조용한 종목은 좁게 잡힙니다.
+              <b>백테스트도 같은 방식으로 계산합니다.</b>
+            </p>
+            <div class="param-row atr-only hidden">
+              <label for="paramAtrTp">ATR 목표 배수</label>
+              <input id="paramAtrTp" type="number" min="0.2" max="10" step="0.1" value="2.2" />
+            </div>
+            <div class="param-row atr-only hidden">
+              <label for="paramAtrSl">ATR 손절 배수</label>
+              <input id="paramAtrSl" type="number" min="0.2" max="5" step="0.1" value="1.0" />
+            </div>
             <div class="param-actions">
               <button id="paramResetBtn" class="ghost-btn">기본값으로</button>
               <button id="paramApplyBtn" class="primary-btn">적용</button>
