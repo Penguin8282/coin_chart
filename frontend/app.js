@@ -55,6 +55,16 @@ function syncChartColors() {
   }
 }
 
+/* 하단 패널 표시 여부 — 매번 다시 켜게 하면 번거롭다 */
+function loadPanels() {
+  const base = { vol: true, rsi: false, macd: false, obv: false };
+  try {
+    const saved = JSON.parse(localStorage.getItem("ss.panels") || "{}");
+    for (const k of Object.keys(base)) if (typeof saved[k] === "boolean") base[k] = saved[k];
+  } catch { /* 저장값이 깨졌으면 기본값으로 */ }
+  return base;
+}
+
 const state = {
   market: "crypto", symbol: "BTCUSDT", interval: "1h", limit: 500,
   exchange: localStorage.getItem("sl.exchange") || "binance",
@@ -66,6 +76,7 @@ const state = {
   view: { start: 0, count: 160 },
   toggles: { ema: true, vwap: true, bb: true, fib: true, rf: false, fbb: false,
              candlePat: true, chartPat: true, customPat: true },
+  panels: loadPanels(),
   hover: null, drag: null,
   selectMode: false, selecting: null, selectedRange: null,
   customPatterns: [], watchlist: [],
@@ -139,11 +150,15 @@ function toast(msg) {
 /* ── DOM ────────────────────────────────────────────────────── */
 const el = {
   chart: $("chartCanvas"), vol: $("volCanvas"), evidence: $("evidenceCanvas"),
+  rsi: $("rsiCanvas"), macd: $("macdCanvas"), obv: $("obvCanvas"),
   spark: $("verdictSpark"), obsSpark: $("obsSpark"),
   crosshair: $("crosshairReadout"), tooltip: $("tooltip"), evTip: $("evidenceTip"),
   market: $("marketSelect"), exchange: $("exchangeSelect"),
 };
 const ctx = el.chart.getContext("2d");
+const rctx = el.rsi.getContext("2d");
+const mctx = el.macd.getContext("2d");
+const octx = el.obv.getContext("2d");
 const vctx = el.vol.getContext("2d");
 const ectx = el.evidence.getContext("2d");
 
@@ -431,9 +446,11 @@ function renderAll() {
   if (!state.data) return;
   syncSymbolLabels();
   [el.chart, el.vol, el.evidence, el.spark, el.obsSpark].forEach(fitCanvas);
+  for (const k of ["rsi", "macd", "obv"]) if (state.panels[k]) fitCanvas(el[k]);
   renderOverview();
   drawChart();
   drawVolume();
+  drawPanels();
   renderPatternList();
 }
 
@@ -522,6 +539,8 @@ function renderOverview() {
   $("buyScoreBar").style.width = `${clamp(dash.buy_score / 22, 0, 1) * 100}%`;
   $("sellScoreBar").style.width = `${clamp(dash.sell_score / 22, 0, 1) * 100}%`;
   $("scoreFine").textContent = `22점 만점 · 매수 ${dash.buy_score} · 매도 ${dash.sell_score} · ${regime} 필터 적용 후 점수입니다.`;
+  renderReasons(dash);
+  renderPlan(dash);
 
   $("regimePill").textContent = regime;
   $("regimePill").className = "regime-pill " + (dash.strong_trend ? "warn" : "");
@@ -564,6 +583,81 @@ const TILE_ICONS = {
   obv: '<path d="M4 20V9M10 20V4M16 20v-8M22 20V13"/>',
   rf:  '<path d="M4 8h16M4 16h16"/><path d="M8 12h8"/>',
 };
+
+/* ══════════════ 점수 근거 ══════════════
+   백엔드가 항목별 획득점을 그대로 내려준다. 프론트에서 다시 계산하지 않는다 —
+   같은 규칙을 두 곳에서 관리하면 화면과 점수가 어긋난다. */
+function renderReasons(dash) {
+  const rows = dash.reasons || [];
+  const g = dash.score_gate;
+  const box = $("reasonList");
+  if (!rows.length) { box.innerHTML = ""; return; }
+
+  const q = ($("reasonSearch").value || "").trim().toLowerCase();
+  // 맞은 근거가 위로, 그다음 배점 큰 순 — 눈이 먼저 닿는 곳에 실제 이유가 있어야 한다
+  const sorted = [...rows].sort((a, b) => {
+    const ha = Math.max(a.buy, a.sell), hb = Math.max(b.buy, b.sell);
+    return (hb > 0) - (ha > 0) || hb - ha || b.max_pts - a.max_pts;
+  });
+
+  let shown = 0;
+  box.innerHTML = sorted.map(r => {
+    const match = !q || r.label.toLowerCase().includes(q) || r.key.includes(q);
+    if (match) shown++;
+    const buyHit = r.buy > 0, sellHit = r.sell > 0;
+    const cls = buyHit && r.buy >= r.sell ? "hit-buy" : sellHit ? "hit-sell" : "";
+    const pts = buyHit || sellHit
+      ? `${buyHit ? "매수 +" + r.buy : ""}${buyHit && sellHit ? " · " : ""}${sellHit ? "매도 +" + r.sell : ""}`
+      : `0 / ${r.max_pts}`;
+    return `<div class="reason-row ${cls} ${match ? "" : "dim"}" data-target="${r.target || ""}">
+      <span class="rr-label">${r.label}</span>
+      <span class="rr-pts">${pts}</span>
+      ${r.detail ? `<span class="rr-detail">${r.detail}</span>` : ""}
+    </div>`;
+  }).join("");
+
+  if (q && !shown) box.innerHTML = `<p class="empty-msg">"${q}"에 해당하는 근거가 없습니다</p>`;
+
+  // 원점수가 어떻게 최종 점수가 됐는지 그대로 적는다 — 감쇠를 숨기면
+  // "근거는 12점인데 점수는 7점"이 설명되지 않는다
+  if (g) {
+    $("reasonGate").textContent = g.sideways
+      ? `횡보 구간(EMA 9·21 간격이 좁음)이라 점수를 0으로 둡니다. 원점수는 매수 ${g.buy_raw} · 매도 ${g.sell_raw}였습니다.`
+      : g.multiplier === 1
+        ? `ADX ${g.adx.toFixed(1)} ≥ ${g.adx_thr} (추세 구간) — 원점수를 그대로 씁니다. 근거 만점 합계는 30점입니다.`
+        : `ADX ${g.adx.toFixed(1)} < ${g.adx_thr} (추세 약함) — 원점수 매수 ${g.buy_raw} · 매도 ${g.sell_raw}에 0.6을 곱했습니다.`;
+  }
+}
+
+/* 하단 패널 토글 */
+function syncPanelBar() {
+  document.querySelectorAll("#panelBar .chip").forEach(b => {
+    const on = !!state.panels[b.dataset.panel];
+    b.classList.toggle("active", on);
+    document.querySelector(`.subpanel[data-panel="${b.dataset.panel}"]`)?.classList.toggle("hidden", !on);
+  });
+}
+document.querySelectorAll("#panelBar .chip").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const k = btn.dataset.panel;
+    state.panels[k] = !state.panels[k];
+    localStorage.setItem("ss.panels", JSON.stringify(state.panels));
+    syncPanelBar();
+    // 방금 켠 캔버스는 크기가 0이었으므로 레이아웃이 잡힌 뒤 그린다
+    requestAnimationFrame(() => {
+      if (state.panels[k] && k !== "vol") fitCanvas(el[k]);
+      drawVolume(); drawPanels();
+    });
+  });
+});
+
+$("reasonToggle").addEventListener("click", () => {
+  const body = $("reasonBody");
+  const open = body.classList.toggle("hidden");
+  $("reasonToggle").textContent = open ? "펼치기" : "접기";
+  $("reasonToggle").setAttribute("aria-expanded", String(!open));
+});
+$("reasonSearch").addEventListener("input", () => { if (state.data) renderReasons(state.data.dashboard); });
 
 function renderTiles(dash, s, last) {
   const rsi = dash.rsi;
@@ -1105,6 +1199,239 @@ function drawVolume() {
   });
 }
 
+/* ══════════════════ 진입 계획 · 포지션 크기 ══════════════════
+   TP/SL은 백엔드가 계산한 값을 그대로 쓴다(퍼센트/ATR 방식 포함).
+   여기서 더하는 건 "그래서 얼마나 살 것인가"뿐이다. */
+
+function planOf(dash) {
+  const hasBuy = dash.signal === "strong_buy" || dash.signal === "normal_buy";
+  const hasSell = dash.signal === "strong_sell" || dash.signal === "normal_sell";
+  if (!hasBuy && !hasSell) return null;
+  return {
+    dir: hasBuy ? "buy" : "sell",
+    entry: dash.price,
+    tp: hasBuy ? dash.tp_buy : dash.tp_sell,
+    sl: hasBuy ? dash.sl_buy : dash.sl_sell,
+  };
+}
+
+function renderPlan(dash) {
+  const plan = planOf(dash);
+  const reward = plan ? Math.abs(plan.tp - plan.entry) : 0;
+  const risk = plan ? Math.abs(plan.entry - plan.sl) : 0;
+
+  if (!plan || risk <= 0) {
+    $("rrValue").textContent = "—";
+    $("rrReward").style.flex = "0"; $("rrRisk").style.flex = "0";
+    $("rrNote").textContent = "신호가 없을 때는 계획을 세우지 않습니다. 점수 5점 이상인 방향이 생기면 채워집니다.";
+    for (const id of ["calcRiskAmt", "calcQty", "calcNotional"]) $(id).textContent = "—";
+    $("calcNote").textContent = "";
+    return;
+  }
+
+  const rr = reward / risk;
+  $("rrValue").textContent = `1 : ${rr.toFixed(2)}`;
+  $("rrValue").style.color = rr >= 1.5 ? C.bull : rr >= 1 ? C.ink : C.bear;
+  $("rrReward").style.flex = String(reward);
+  $("rrRisk").style.flex = String(risk);
+  $("rrNote").textContent =
+    `${plan.dir === "buy" ? "매수" : "매도"} 기준 · 목표까지 ${fmtPrice(reward)}, 손절까지 ${fmtPrice(risk)}` +
+    ` · ${dash.tp_basis === "atr" ? "ATR 배수" : "퍼센트"} 방식` +
+    (rr < 1 ? " — 얻을 것보다 잃을 것이 큽니다." : "");
+
+  renderCalc(plan, risk);
+}
+
+/* 잔고와 감당할 손실 비율에서 수량을 역산한다.
+   "얼마 살까"가 아니라 "틀렸을 때 얼마 잃을까"에서 출발하는 순서다. */
+function renderCalc(plan, riskPerUnit) {
+  const balance = Number($("calcBalance").value);
+  const pct = Number($("calcRisk").value);
+  const cur = state.currency === "KRW" ? "원" : state.currency === "USDT" ? "USDT" : "USD";
+  // 잔고는 그 종목의 결제 통화 기준이다. 종목을 바꾸면 숫자는 그대로인데
+  // 단위만 바뀌므로("5,000,000 USDT"), 통화가 달라졌을 때 짚어준다.
+  $("calcCcy").textContent = `(${cur})`;
+  const changed = state.calcCcy && state.calcCcy !== cur;
+  state.calcCcy = cur;
+
+  if (!Number.isFinite(balance) || balance <= 0 || !Number.isFinite(pct) || pct <= 0) {
+    for (const id of ["calcRiskAmt", "calcQty", "calcNotional"]) $(id).textContent = "—";
+    $("calcNote").textContent = "잔고와 비율에 0보다 큰 숫자를 넣어주세요.";
+    return;
+  }
+
+  const riskAmount = balance * (pct / 100);
+  const qty = riskPerUnit > 0 ? riskAmount / riskPerUnit : 0;
+  const notional = qty * plan.entry;
+
+  $("calcRiskAmt").textContent = fmtMoney(riskAmount, cur);
+  $("calcQty").textContent = qty.toLocaleString("en-US", { maximumFractionDigits: qty < 1 ? 6 : 4 });
+  $("calcNotional").textContent = fmtMoney(notional, cur);
+
+  // 투입액이 잔고를 넘으면 조용히 두면 안 된다 — 레버리지 없이는 불가능한 수량이다
+  const over = notional > balance;
+  $("calcNotional").classList.toggle("accent", !over);
+  $("calcNote").textContent = changed
+    ? `결제 통화가 ${cur}로 바뀌었습니다. 잔고를 ${cur} 기준으로 다시 넣어주세요 — 지금 값은 이전 통화 기준입니다.`
+    : over
+      ? `투입 금액이 잔고보다 큽니다. 손절 폭이 좁아 수량이 커진 것이라, 레버리지 없이는 이만큼 살 수 없습니다.`
+      : `손절에 닿으면 ${fmtMoney(riskAmount, cur)}(잔고의 ${pct}%)을 잃습니다. 수수료·슬리피지는 빠져 있습니다.`;
+  $("calcNote").classList.toggle("warn-note", changed || over);
+}
+
+function fmtMoney(v, cur) {
+  if (cur === "원") return Math.round(v).toLocaleString("ko-KR") + "원";
+  return v.toLocaleString("en-US", { maximumFractionDigits: 2 }) + " " + cur;
+}
+
+["calcBalance", "calcRisk"].forEach(id => {
+  $(id).addEventListener("input", () => {
+    if (state.data) renderPlan(state.data.dashboard);
+    localStorage.setItem("ss.calc", JSON.stringify({
+      balance: $("calcBalance").value, risk: $("calcRisk").value,
+    }));
+  });
+});
+
+/* ══════════════════ 하단 보조 패널 ══════════════════
+   메인 차트와 x축(makeScales)을 그대로 공유한다. 확대·이동해도 같은 봉을
+   보고 있어야 아래 지표를 위 캔들과 대조할 수 있다. */
+
+/* 켜져 있는 패널만 그린다 — 꺼둔 캔버스는 크기가 0이라 그리면 예외가 난다 */
+function drawPanels() {
+  if (!state.data) return;
+  if (state.panels.rsi) drawRsiPanel();
+  if (state.panels.macd) drawMacdPanel();
+  if (state.panels.obv) drawObvPanel();
+}
+
+function panelGeom(canvas) {
+  return { x0: MARGIN.left, x1: canvas.clientWidth - MARGIN.right,
+           y0: 14, y1: canvas.clientHeight - 8 };
+}
+
+function panelLabel(context, text) {
+  context.fillStyle = C.ink3;
+  context.font = "10px 'IBM Plex Mono', monospace";
+  context.fillText(text, MARGIN.left, 11);
+}
+
+function drawRsiPanel() {
+  const d = state.data, S = d.series;
+  paint(rctx, el.rsi, () => {
+    const sc = makeScales(), g = panelGeom(el.rsi);
+    const yOf = v => g.y1 - (clamp(v, 0, 100) / 100) * (g.y1 - g.y0);
+
+    // 과매수·과매도 띠를 먼저 깔아 배경으로 둔다
+    rctx.fillStyle = hexA(C.bear, 0.07);
+    rctx.fillRect(g.x0, yOf(100), g.x1 - g.x0, yOf(70) - yOf(100));
+    rctx.fillStyle = hexA(C.bull, 0.07);
+    rctx.fillRect(g.x0, yOf(30), g.x1 - g.x0, yOf(0) - yOf(30));
+
+    for (const lv of [30, 50, 70]) {
+      rctx.strokeStyle = C.gridLine; rctx.lineWidth = 1;
+      rctx.setLineDash(lv === 50 ? [2, 4] : []);
+      rctx.beginPath(); rctx.moveTo(g.x0, yOf(lv)); rctx.lineTo(g.x1, yOf(lv)); rctx.stroke();
+      rctx.setLineDash([]);
+      rctx.fillStyle = C.ink3; rctx.font = "9.5px 'IBM Plex Mono', monospace";
+      rctx.fillText(String(lv), g.x1 + 6, yOf(lv) + 3);
+    }
+
+    const pts = [];
+    for (let i = sc.start; i < sc.start + sc.count; i++) {
+      const v = S.rsi[i];
+      if (Number.isFinite(v)) pts.push([sc.xOf(i), yOf(v)]);
+    }
+    line(rctx, pts, C.rf, 1.5);
+    const last = S.rsi[sc.start + sc.count - 1];
+    panelLabel(rctx, `RSI (14)${Number.isFinite(last) ? "  " + last.toFixed(1) : ""}`);
+  });
+}
+
+function drawMacdPanel() {
+  const d = state.data, S = d.series;
+  paint(mctx, el.macd, () => {
+    const sc = makeScales(), g = panelGeom(el.macd);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = sc.start; i < sc.start + sc.count; i++) {
+      for (const v of [S.macd_line[i], S.macd_signal[i], S.macd_hist[i]]) {
+        if (Number.isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+      }
+    }
+    if (!Number.isFinite(lo)) return;
+    const pad = (hi - lo) * 0.12 || 1;
+    lo -= pad; hi += pad;
+    const yOf = v => g.y1 - ((v - lo) / (hi - lo)) * (g.y1 - g.y0);
+
+    // 0선 — MACD는 0 위/아래가 의미를 가르므로 반드시 보여야 한다
+    const yZero = yOf(0);
+    mctx.strokeStyle = C.gridLine; mctx.lineWidth = 1; mctx.setLineDash([2, 4]);
+    mctx.beginPath(); mctx.moveTo(g.x0, yZero); mctx.lineTo(g.x1, yZero); mctx.stroke();
+    mctx.setLineDash([]);
+
+    const bw = Math.max(1, sc.candleW * 0.55);
+    for (let i = sc.start; i < sc.start + sc.count; i++) {
+      const v = S.macd_hist[i];
+      if (!Number.isFinite(v)) continue;
+      const prev = S.macd_hist[i - 1];
+      // 같은 부호라도 줄어들면 흐리게 — 힘이 빠지는 중인지 보이게 한다
+      const fading = Number.isFinite(prev) && Math.abs(v) < Math.abs(prev);
+      mctx.fillStyle = hexA(v >= 0 ? C.bull : C.bear, fading ? 0.35 : 0.75);
+      const y = yOf(v);
+      mctx.fillRect(sc.xOf(i) - bw / 2, Math.min(y, yZero), bw, Math.abs(y - yZero));
+    }
+
+    const mk = key => {
+      const pts = [];
+      for (let i = sc.start; i < sc.start + sc.count; i++) {
+        if (Number.isFinite(S[key][i])) pts.push([sc.xOf(i), yOf(S[key][i])]);
+      }
+      return pts;
+    };
+    line(mctx, mk("macd_line"), C.rf, 1.4);
+    line(mctx, mk("macd_signal"), C.warn, 1.2);
+    panelLabel(mctx, "MACD (12,26,9)");
+  });
+}
+
+function drawObvPanel() {
+  const d = state.data, S = d.series;
+  paint(octx, el.obv, () => {
+    const sc = makeScales(), g = panelGeom(el.obv);
+    let lo = Infinity, hi = -Infinity;
+    for (let i = sc.start; i < sc.start + sc.count; i++) {
+      for (const v of [S.obv[i], S.cvd[i]]) {
+        if (Number.isFinite(v)) { lo = Math.min(lo, v); hi = Math.max(hi, v); }
+      }
+    }
+    if (!Number.isFinite(lo)) return;
+    const pad = (hi - lo) * 0.12 || 1;
+    lo -= pad; hi += pad;
+    const yOf = v => g.y1 - ((v - lo) / (hi - lo)) * (g.y1 - g.y0);
+
+    const mk = key => {
+      const pts = [];
+      for (let i = sc.start; i < sc.start + sc.count; i++) {
+        if (Number.isFinite(S[key][i])) pts.push([sc.xOf(i), yOf(S[key][i])]);
+      }
+      return pts;
+    };
+    line(octx, mk("obv"), C.rf, 1.5);
+    line(octx, mk("cvd"), C.fbb, 1.2, [3, 3]);
+
+    // 다이버전스가 잡힌 봉을 표시 — 22점에서 3점짜리 근거라 눈에 띄어야 한다
+    for (let i = sc.start; i < sc.start + sc.count; i++) {
+      const bull = d.events.obv_bull_div[i], bear = d.events.obv_bear_div[i];
+      if (!bull && !bear) continue;
+      octx.fillStyle = bull ? C.bull : C.bear;
+      octx.beginPath();
+      octx.arc(sc.xOf(i), yOf(S.obv[i]), 3, 0, Math.PI * 2);
+      octx.fill();
+    }
+    panelLabel(octx, "OBV  ·  CVD(점선)");
+  });
+}
+
 /* ══════════════════ 사이드 패널 ══════════════════ */
 const MARKET_LABEL = { crypto: "코인", us: "미국", kr: "한국" };
 const X_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -1404,7 +1731,7 @@ function renderPatternList() {
     node.addEventListener("click", () => {
       const idx = parseInt(node.dataset.idx, 10);
       state.view.start = clamp(idx - Math.round(state.view.count * 0.7), 0, Math.max(0, d.candles.length - state.view.count));
-      drawChart(); drawVolume();
+      drawChart(); drawVolume(); drawPanels();
     });
   });
 }
@@ -1521,7 +1848,7 @@ el.chart.addEventListener("wheel", (e) => {
   const ratio = (mouseIdx - state.view.start) / state.view.count;
   state.view.start = clamp(Math.round(mouseIdx - ratio * newCount), 0, Math.max(0, n - newCount));
   state.view.count = newCount;
-  drawChart(); drawVolume();
+  drawChart(); drawVolume(); drawPanels();
 }, { passive: false });
 
 el.chart.addEventListener("mousedown", (e) => {
@@ -1539,7 +1866,7 @@ window.addEventListener("mousemove", (e) => {
     const sc = makeScales();
     const n = state.data.candles.length;
     state.view.start = clamp(state.drag.viewStart0 + Math.round((state.drag.x0 - mx(e, el.chart)) / sc.candleW), 0, Math.max(0, n - state.view.count));
-    drawChart(); drawVolume();
+    drawChart(); drawVolume(); drawPanels();
     return;
   }
   const r = el.chart.getBoundingClientRect();
@@ -1774,7 +2101,7 @@ let canvasObserver = null;
 /* 캔버스는 카드 높이에 따라 늘어나므로, 실제 크기가 바뀔 때마다 다시 그린다.
    (비트맵만 늘어나 그림이 찌그러지는 것을 막는다) */
 if (window.ResizeObserver) {
-  const redraw = { evidence: drawEvidence, chart: () => { drawChart(); drawVolume(); } };
+  const redraw = { evidence: drawEvidence, chart: () => { drawChart(); drawVolume(); drawPanels(); } };
   const ro = new ResizeObserver((entries) => {
     if (!state.data) return;
     for (const entry of entries) {
@@ -2141,6 +2468,12 @@ $("paramResetBtn").addEventListener("click", async () => {
 
   addCandleRule(0);
   updateLayerSummary();
+  syncPanelBar();
+  try {
+    const saved = JSON.parse(localStorage.getItem("ss.calc") || "{}");
+    if (saved.balance) $("calcBalance").value = saved.balance;
+    if (saved.risk) $("calcRisk").value = saved.risk;
+  } catch { /* 저장값이 깨졌으면 기본값 그대로 */ }
   try {
     await loadMe();
     await loadMarkets();
