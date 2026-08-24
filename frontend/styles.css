@@ -509,7 +509,20 @@ svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round
 .chart-card { padding: 14px; }
 .chart-stack { position: relative; display: flex; flex-direction: column; }
 #chartCanvas { width: 100%; height: 460px; display: block; cursor: crosshair; }
-#volCanvas { width: 100%; height: 96px; display: block; border-top: 1px solid var(--border); margin-top: 8px; }
+
+/* ══════════════ 하단 보조 패널 ══════════════
+   차트와 x축을 공유해야 같은 봉을 보고 있다는 게 성립한다. 그래서 폭과
+   좌우 여백을 메인 차트와 똑같이 맞춘다. */
+.panel-bar {
+  display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+  padding: 0 2px 10px; border-bottom: 1px solid var(--border); margin-bottom: 10px;
+}
+.pb-label { font-size: 11px; color: var(--ink-3); margin-right: 4px; }
+
+.subpanel { position: relative; border-top: 1px solid var(--border); margin-top: 8px; }
+.subpanel canvas { width: 100%; height: 96px; display: block; }
+.subpanel[data-panel="macd"] canvas { height: 104px; }
+#volCanvas { width: 100%; height: 96px; display: block; }
 #crosshairReadout {
   position: absolute; top: 10px; left: 10px;
   background: color-mix(in srgb, var(--surface-3) 92%, transparent);
@@ -1025,3 +1038,39 @@ table.data tbody tr:hover .row-act,
   grid-column: 1 / -1; font-family: var(--mono); font-size: 10.5px; color: var(--ink-3);
 }
 .reason-row.dim { opacity: .45; }
+
+
+/* ══════════════ 진입 계획 · 포지션 계산 ══════════════ */
+.plan-block { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 12px;
+  display: flex; flex-direction: column; gap: 10px; }
+
+.rr-row { display: flex; align-items: center; gap: 10px; }
+.rr-label { font-size: 11.5px; color: var(--ink-3); flex: 0 0 auto; }
+.rr-track {
+  flex: 1; height: 8px; border-radius: 999px; overflow: hidden;
+  display: flex; background: var(--surface-3);
+}
+.rr-reward { background: var(--bull); }
+.rr-risk { background: var(--bear); }
+.rr-value {
+  font-family: var(--mono); font-size: 13px; font-weight: 600;
+  font-variant-numeric: tabular-nums; flex: 0 0 auto;
+}
+
+.calc-box { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 12px; }
+.calc-head { display: flex; flex-direction: column; gap: 2px; margin-bottom: 10px; font-size: 12px; color: var(--ink-2); }
+.calc-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.calc-row label { font-size: 11.5px; color: var(--ink-3); flex: 1; }
+.calc-row label b { color: var(--ink-2); font-family: var(--mono); font-size: 10.5px; font-weight: 500; }
+.warn-note { color: var(--warn) !important; }
+.calc-row input { width: 116px; padding: 6px 9px; font-size: 12.5px; text-align: right; font-family: var(--mono); }
+.calc-unit { font-size: 11px; color: var(--ink-3); width: 18px; }
+
+.calc-out { margin: 10px 0 0; display: flex; flex-direction: column; gap: 6px; }
+.calc-out > div { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.calc-out dt { font-size: 11.5px; color: var(--ink-3); }
+.calc-out dd {
+  margin: 0; font-family: var(--mono); font-size: 12.5px; font-weight: 600;
+  font-variant-numeric: tabular-nums; color: var(--ink);
+}
+.calc-out dd.accent { color: var(--accent); }
