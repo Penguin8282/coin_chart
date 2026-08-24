@@ -95,6 +95,18 @@ def _clean(v):
     return v
 
 
+def _tp_params(tp_mode: str, atr_tp_mult: float, atr_sl_mult: float) -> dict:
+    """손절·목표 계산 방식 파라미터 검증. 잘못된 값은 조용히 기본값으로
+    바꾸지 않고 400으로 알린다 — 사용자가 고른 값이 무시되면 더 혼란스럽다."""
+    if tp_mode not in ("pct", "atr"):
+        raise HTTPException(400, "tp_mode는 pct 또는 atr이어야 합니다")
+    if not (0.2 <= atr_tp_mult <= 10):
+        raise HTTPException(400, "ATR 목표 배수는 0.2~10 사이여야 합니다")
+    if not (0.2 <= atr_sl_mult <= 5):
+        raise HTTPException(400, "ATR 손절 배수는 0.2~5 사이여야 합니다")
+    return {"tp_mode": tp_mode, "atr_tp_mult": atr_tp_mult, "atr_sl_mult": atr_sl_mult}
+
+
 @app.get("/api/markets")
 def markets():
     return _clean({
@@ -126,9 +138,11 @@ def _ohlcv_arrays(candle_rows: list[dict]):
 @app.get("/api/analysis")
 def analysis(request: Request, market: str, symbol: str, interval: str = "1d", limit: int = 500,
              vol_len: int = 20, fib_len: int = 100, adx_thr: float = 25.0,
+             tp_mode: str = "pct", atr_tp_mult: float = 2.2, atr_sl_mult: float = 1.0,
              exchange: str | None = None):
     if market not in ("crypto", "us", "kr"):
         raise HTTPException(400, "market은 crypto|us|kr 중 하나여야 합니다")
+    tp_kw = _tp_params(tp_mode, atr_tp_mult, atr_sl_mult)   # 시세 조회 전에 검증
     limit = max(60, min(limit, 1000))
     fetched = get_candles(market, symbol, interval, limit, exchange=exchange)
     rows = fetched["candles"]
@@ -136,7 +150,7 @@ def analysis(request: Request, market: str, symbol: str, interval: str = "1d", l
         raise HTTPException(422, "분석하기엔 캔들 데이터가 너무 적습니다")
 
     o, h, l, c, v = _ohlcv_arrays(rows)
-    signals = compute_signals(o, h, l, c, v, vol_len=vol_len, fib_len=min(fib_len, len(c)), adx_thr=adx_thr)
+    signals = compute_signals(o, h, l, c, v, vol_len=vol_len, fib_len=min(fib_len, len(c)), adx_thr=adx_thr, **tp_kw)
 
     a = atr_fn(h, l, c, 14)
     pivots = find_pivots(h, l, order=4, atr=a, min_move_atr=1.2)
@@ -220,10 +234,12 @@ def screener(request: Request, scope: str = "watchlist", interval: str = "1h", l
 def backtest(market: str, symbol: str, interval: str = "1h", limit: int = 600,
              exchange: str | None = None, min_score: int = 7, max_bars: int = 48,
              fee_pct: float = 0.1, vol_len: int = 20, fib_len: int = 100,
-             adx_thr: float = 25.0):
+             adx_thr: float = 25.0, tp_mode: str = "pct",
+             atr_tp_mult: float = 2.2, atr_sl_mult: float = 1.0):
     """이 신호를 그대로 따랐다면 어땠을지 과거 데이터로 계산한다."""
     if market not in ("crypto", "us", "kr"):
         raise HTTPException(400, "market은 crypto|us|kr 중 하나여야 합니다")
+    tp_kw = _tp_params(tp_mode, atr_tp_mult, atr_sl_mult)   # 시세 조회 전에 검증
 
     fetched = get_candles(market, symbol, interval, max(200, min(limit, 1000)), exchange=exchange)
     rows = fetched["candles"]
@@ -238,10 +254,11 @@ def backtest(market: str, symbol: str, interval: str = "1h", limit: int = 600,
         min_score=max(1, min(min_score, 22)), max_bars=max(4, min(max_bars, 240)),
         fee_pct=max(0.0, min(fee_pct, 2.0)),
         vol_len=vol_len, fib_len=fib_len, adx_thr=adx_thr,
+        **tp_kw,
     )
     if "error" in result:
         raise HTTPException(422, result["error"])
-    result.update(market=market, symbol=symbol, interval=interval,
+    result.update(market=market, symbol=symbol, interval=interval, tp_basis=tp_mode,
                   source=fetched["source"], currency=fetched.get("currency", "USD"),
                   candles=len(rows))
     return _clean(result)

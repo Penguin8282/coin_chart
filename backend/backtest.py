@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import numpy as np
 
+from . import indicators as ind
 from .scoring import compute_signals
 
 DEFAULT_FEE_PCT = 0.1   # 진입+청산 왕복 수수료·슬리피지 (%)
@@ -44,7 +45,9 @@ def _first_touch(highs: np.ndarray, lows: np.ndarray, tp: float, sl: float,
 
 def run_backtest(o, h, l, c, v, times, *, min_score: int = 7, max_bars: int = 48,
                  fee_pct: float = DEFAULT_FEE_PCT, vol_len: int = 20,
-                 fib_len: int = 100, adx_thr: float = 25.0) -> dict:
+                 fib_len: int = 100, adx_thr: float = 25.0,
+                 tp_mode: str = "pct", atr_tp_mult: float = 2.2,
+                 atr_sl_mult: float = 1.0) -> dict:
     o, h, l, c, v = map(lambda a: np.asarray(a, dtype=float), (o, h, l, c, v))
     n = len(c)
     if n < 120:
@@ -52,6 +55,7 @@ def run_backtest(o, h, l, c, v, times, *, min_score: int = 7, max_bars: int = 48
 
     sig = compute_signals(o, h, l, c, v, vol_len=vol_len,
                           fib_len=min(fib_len, n), adx_thr=adx_thr)
+    atr = ind.atr(h, l, c, 14)
     S, E = sig["series"], sig["events"]
     buy_score, sell_score = S["buy_score"], S["sell_score"]
 
@@ -67,7 +71,15 @@ def run_backtest(o, h, l, c, v, times, *, min_score: int = 7, max_bars: int = 48
         entry = float(c[i])
         score = int(buy_score[i] if is_buy else sell_score[i])
         strong = score >= 7
-        if is_buy:
+        # 화면(scoring.py)과 반드시 같은 방식으로 계산해야 한다 — 화면은 ATR로
+        # 보여주면서 백테스트는 퍼센트로 재면 성적표가 다른 전략 것이 된다.
+        if tp_mode == "atr":
+            a = float(atr[i]) if np.isfinite(atr[i]) and atr[i] > 0 else entry * 0.01
+            if is_buy:
+                tp, sl = entry + a * atr_tp_mult, entry - a * atr_sl_mult
+            else:
+                tp, sl = entry - a * atr_tp_mult, entry + a * atr_sl_mult
+        elif is_buy:
             tp = entry * (1.025 if strong else 1.020)
             sl = entry * (0.988 if strong else 0.991)
         else:

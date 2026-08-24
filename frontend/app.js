@@ -6,23 +6,26 @@ const API = "/api";
 /* ── 화면 설정(테마·밀도·지표 파라미터) ─────────────────────────────
    전부 브라우저에 저장한다. 지표 파라미터는 22점 스코어 계산에 직접
    들어가므로, 값이 바뀌면 반드시 서버에 다시 물어봐야 한다. */
-const DEFAULT_PARAMS = { vol_len: 20, fib_len: 100, adx_thr: 25 };
+const DEFAULT_PARAMS = { vol_len: 20, fib_len: 100, adx_thr: 25, atr_tp_mult: 2.2, atr_sl_mult: 1.0 };
 const PARAM_RANGE = {
   vol_len: { min: 5, max: 200, label: "거래량 MA 기간" },
   fib_len: { min: 20, max: 500, label: "피보나치 기간" },
   adx_thr: { min: 10, max: 60, label: "ADX 추세 기준" },
+  atr_tp_mult: { min: 0.2, max: 10, label: "ATR 목표 배수" },
+  atr_sl_mult: { min: 0.2, max: 5, label: "ATR 손절 배수" },
 };
 
 function loadParams() {
   try {
     const saved = JSON.parse(localStorage.getItem("ss.params") || "{}");
-    const out = { ...DEFAULT_PARAMS };
+    const out = { ...DEFAULT_PARAMS, tp_mode: "pct" };
     for (const k of Object.keys(DEFAULT_PARAMS)) {
       const v = Number(saved[k]);
       if (Number.isFinite(v) && v >= PARAM_RANGE[k].min && v <= PARAM_RANGE[k].max) out[k] = v;
     }
+    out.tp_mode = saved.tp_mode === "atr" ? "atr" : "pct";
     return out;
-  } catch { return { ...DEFAULT_PARAMS }; }
+  } catch { return { ...DEFAULT_PARAMS, tp_mode: "pct" }; }
 }
 
 /* 캔버스 색은 CSS 토큰에서 읽어온다. 그래야 테마를 바꿨을 때 차트도 같이
@@ -229,9 +232,15 @@ const SOURCE_LABEL = {
   demo: "샘플 데이터",
 };
 
+/* 느린 응답이 빠른 응답을 덮어쓰는 것을 막는 요청 순번.
+   종목이나 설정을 연달아 바꾸면 먼저 보낸 요청이 나중에 도착할 수 있는데,
+   그걸 그대로 반영하면 화면이 한 단계 과거로 되돌아간다. */
+let analysisSeq = 0;
+
 async function loadAnalysis() {
   const sym = state.symbol;
   if (!sym) return;
+  const seq = ++analysisSeq;
   const btn = $("refreshBtn");
   btn.classList.add("busy");
   $("symbolBtn").classList.add("loading");
@@ -239,8 +248,10 @@ async function loadAnalysis() {
     const p = state.params;
     const qs = `market=${state.market}&symbol=${encodeURIComponent(sym)}&interval=${state.interval}` +
                `&limit=${state.limit}&exchange=${encodeURIComponent(state.exchange)}` +
-               `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}`;
+               `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}` +
+               `&tp_mode=${p.tp_mode}&atr_tp_mult=${p.atr_tp_mult}&atr_sl_mult=${p.atr_sl_mult}`;
     const data = await api(`/analysis?${qs}`);
+    if (seq !== analysisSeq) return;   // 이 응답을 기다리는 동안 더 새 요청이 나갔다
     state.data = data;
     state.currency = data.currency || "USD";
     syncSymbolButton();
@@ -524,8 +535,8 @@ function renderOverview() {
     { dot: C.vwap, label: "VWAP 기준", value: fmtPrice(s.vwap[last]) },
     { dot: C.ema,  label: "Fib. 지지 (0.618)", value: fmtPrice(s.fib_618[last]) },
     { dot: C.bear, label: "Fib. 저항 (0.382)", value: fmtPrice(s.fib_382[last]) },
-    { dot: C.warn, label: "TP 제안", value: hasBuy ? fmtPrice(dash.tp_buy) : hasSell ? fmtPrice(dash.tp_sell) : "—", muted: !hasBuy && !hasSell, gap: true },
-    { dot: C.bear, label: "SL 제안", value: hasBuy ? fmtPrice(dash.sl_buy) : hasSell ? fmtPrice(dash.sl_sell) : "—", muted: !hasBuy && !hasSell },
+    { dot: C.warn, label: `TP 제안 ${dash.tp_basis === "atr" ? "(ATR 배수)" : "(퍼센트)"}`, value: hasBuy ? fmtPrice(dash.tp_buy) : hasSell ? fmtPrice(dash.tp_sell) : "—", muted: !hasBuy && !hasSell, gap: true },
+    { dot: C.bear, label: `SL 제안 ${dash.tp_basis === "atr" ? "(ATR 배수)" : "(퍼센트)"}`, value: hasBuy ? fmtPrice(dash.sl_buy) : hasSell ? fmtPrice(dash.sl_sell) : "—", muted: !hasBuy && !hasSell },
   ];
   $("levelList").innerHTML = rows.map(r => `
     <div class="level-row${r.gap ? " spacer-top" : ""}">
@@ -1814,7 +1825,8 @@ async function runScreener() {
     const qs = `scope=${$("scrScope").value}&interval=${$("scrInterval").value}` +
                `&direction=${$("scrDirection").value}&min_score=${$("scrMinScore").value}` +
                `&exchange=${encodeURIComponent(state.exchange)}` +
-               `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}`;
+               `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}` +
+               `&tp_mode=${p.tp_mode}&atr_tp_mult=${p.atr_tp_mult}&atr_sl_mult=${p.atr_sl_mult}`;
     const res = await api(`/screener?${qs}`);
     renderScreener(res);
   } catch (e) {
@@ -1894,7 +1906,8 @@ async function runBacktest() {
                `&interval=${state.interval}&exchange=${encodeURIComponent(state.exchange)}` +
                `&min_score=${$("btMinScore").value}&max_bars=${$("btMaxBars").value}` +
                `&fee_pct=${$("btFee").value}` +
-               `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}`;
+               `&vol_len=${p.vol_len}&fib_len=${p.fib_len}&adx_thr=${p.adx_thr}` +
+               `&tp_mode=${p.tp_mode}&atr_tp_mult=${p.atr_tp_mult}&atr_sl_mult=${p.atr_sl_mult}`;
     const res = await api(`/backtest?${qs}`);
     renderBacktest(res);
   } catch (e) {
@@ -1906,7 +1919,8 @@ async function runBacktest() {
 
 function renderBacktest(res) {
   $("btSymbol").textContent = `${res.symbol} · ${TF_LABEL[res.interval] || res.interval}`;
-  $("btMeta").textContent = `${res.candles}봉 · ${SOURCE_LABEL[res.source] || res.source}`;
+  $("btMeta").textContent = `${res.candles}봉 · ${SOURCE_LABEL[res.source] || res.source}` +
+    ` · ${res.tp_basis === "atr" ? "ATR 배수 방식" : "퍼센트 방식"}`;
   const s = res.summary;
 
   state.btFor = { symbol: res.symbol, interval: res.interval };
@@ -2063,6 +2077,16 @@ function fillParamInputs() {
   $("paramVolLen").value = state.params.vol_len;
   $("paramFibLen").value = state.params.fib_len;
   $("paramAdxThr").value = state.params.adx_thr;
+  $("paramTpMode").value = state.params.tp_mode;
+  $("paramAtrTp").value = state.params.atr_tp_mult;
+  $("paramAtrSl").value = state.params.atr_sl_mult;
+  syncAtrRows();
+}
+
+/* ATR 배수 입력칸은 ATR 방식을 골랐을 때만 보여준다 */
+function syncAtrRows() {
+  const on = $("paramTpMode").value === "atr";
+  document.querySelectorAll(".param-row.atr-only").forEach(r => r.classList.toggle("hidden", !on));
 }
 
 function readParamInputs() {
@@ -2070,6 +2094,8 @@ function readParamInputs() {
     vol_len: Number($("paramVolLen").value),
     fib_len: Number($("paramFibLen").value),
     adx_thr: Number($("paramAdxThr").value),
+    atr_tp_mult: Number($("paramAtrTp").value),
+    atr_sl_mult: Number($("paramAtrSl").value),
   };
   for (const [k, r] of Object.entries(PARAM_RANGE)) {
     if (!Number.isFinite(raw[k])) return { error: `${r.label}에 숫자를 입력하세요.` };
@@ -2077,8 +2103,11 @@ function readParamInputs() {
       return { error: `${r.label}은 ${r.min} 이상 ${r.max} 이하여야 합니다.` };
     }
   }
+  raw.tp_mode = $("paramTpMode").value === "atr" ? "atr" : "pct";
   return { params: raw };
 }
+
+$("paramTpMode").addEventListener("change", syncAtrRows);
 
 $("paramApplyBtn").addEventListener("click", async () => {
   const err = $("paramError");
@@ -2092,7 +2121,7 @@ $("paramApplyBtn").addEventListener("click", async () => {
 });
 
 $("paramResetBtn").addEventListener("click", async () => {
-  state.params = { ...DEFAULT_PARAMS };
+  state.params = { ...DEFAULT_PARAMS, tp_mode: "pct" };
   localStorage.removeItem("ss.params");
   fillParamInputs();
   $("paramError").textContent = "";
