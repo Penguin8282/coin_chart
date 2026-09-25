@@ -242,6 +242,41 @@
                 <svg class="head-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3.4"/></svg>
               </header>
               <dl class="level-list" id="levelList"></dl>
+
+              <div class="plan-block" id="planBlock">
+                <div class="rr-row">
+                  <span class="rr-label">손익비</span>
+                  <div class="rr-track" id="rrTrack">
+                    <div class="rr-reward" id="rrReward"></div>
+                    <div class="rr-risk" id="rrRisk"></div>
+                  </div>
+                  <span class="rr-value" id="rrValue">—</span>
+                </div>
+                <p class="fineprint" id="rrNote">—</p>
+
+                <div class="calc-box">
+                  <div class="calc-head">
+                    <span>포지션 크기 계산</span>
+                    <span class="field-hint">한 번에 얼마까지 잃을지부터 정합니다</span>
+                  </div>
+                  <div class="calc-row">
+                    <label for="calcBalance">계좌 잔고 <b id="calcCcy">원</b></label>
+                    <input id="calcBalance" type="number" min="0" step="100000" value="5000000" />
+                  </div>
+                  <div class="calc-row">
+                    <label for="calcRisk">한 번에 걸 비율</label>
+                    <input id="calcRisk" type="number" min="0.1" max="10" step="0.1" value="1" />
+                    <span class="calc-unit">%</span>
+                  </div>
+                  <dl class="calc-out">
+                    <div><dt>잃을 각오 금액</dt><dd id="calcRiskAmt">—</dd></div>
+                    <div><dt>살 수 있는 수량</dt><dd id="calcQty">—</dd></div>
+                    <div><dt>투입 금액</dt><dd id="calcNotional">—</dd></div>
+                  </dl>
+                  <p class="fineprint" id="calcNote">—</p>
+                </div>
+              </div>
+
               <p class="fineprint">신호가 발생한 경우에만 TP·SL을 산출합니다. 실제 주문과 자동 연결되지 않습니다.</p>
             </article>
           </div>
@@ -276,11 +311,21 @@
 
         <div class="ledger-grid">
           <article class="card chart-card">
+            <div class="panel-bar" id="panelBar">
+              <span class="pb-label">하단 패널</span>
+              <button class="chip active" data-tone="mint" data-panel="vol">거래량</button>
+              <button class="chip" data-tone="blue" data-panel="rsi">RSI</button>
+              <button class="chip" data-tone="amber" data-panel="macd">MACD</button>
+              <button class="chip" data-tone="violet" data-panel="obv">OBV</button>
+            </div>
             <div class="chart-stack">
               <canvas id="chartCanvas"></canvas>
-              <canvas id="volCanvas"></canvas>
               <div id="crosshairReadout"></div>
             </div>
+            <div class="subpanel" data-panel="vol"><canvas id="volCanvas"></canvas></div>
+            <div class="subpanel hidden" data-panel="rsi"><canvas id="rsiCanvas"></canvas></div>
+            <div class="subpanel hidden" data-panel="macd"><canvas id="macdCanvas"></canvas></div>
+            <div class="subpanel hidden" data-panel="obv"><canvas id="obvCanvas"></canvas></div>
           </article>
 
           <div class="ledger-side">
