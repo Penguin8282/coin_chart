@@ -522,6 +522,7 @@ function renderOverview() {
   $("buyScoreBar").style.width = `${clamp(dash.buy_score / 22, 0, 1) * 100}%`;
   $("sellScoreBar").style.width = `${clamp(dash.sell_score / 22, 0, 1) * 100}%`;
   $("scoreFine").textContent = `22점 만점 · 매수 ${dash.buy_score} · 매도 ${dash.sell_score} · ${regime} 필터 적용 후 점수입니다.`;
+  renderReasons(dash);
 
   $("regimePill").textContent = regime;
   $("regimePill").className = "regime-pill " + (dash.strong_trend ? "warn" : "");
@@ -564,6 +565,59 @@ const TILE_ICONS = {
   obv: '<path d="M4 20V9M10 20V4M16 20v-8M22 20V13"/>',
   rf:  '<path d="M4 8h16M4 16h16"/><path d="M8 12h8"/>',
 };
+
+/* ══════════════ 점수 근거 ══════════════
+   백엔드가 항목별 획득점을 그대로 내려준다. 프론트에서 다시 계산하지 않는다 —
+   같은 규칙을 두 곳에서 관리하면 화면과 점수가 어긋난다. */
+function renderReasons(dash) {
+  const rows = dash.reasons || [];
+  const g = dash.score_gate;
+  const box = $("reasonList");
+  if (!rows.length) { box.innerHTML = ""; return; }
+
+  const q = ($("reasonSearch").value || "").trim().toLowerCase();
+  // 맞은 근거가 위로, 그다음 배점 큰 순 — 눈이 먼저 닿는 곳에 실제 이유가 있어야 한다
+  const sorted = [...rows].sort((a, b) => {
+    const ha = Math.max(a.buy, a.sell), hb = Math.max(b.buy, b.sell);
+    return (hb > 0) - (ha > 0) || hb - ha || b.max_pts - a.max_pts;
+  });
+
+  let shown = 0;
+  box.innerHTML = sorted.map(r => {
+    const match = !q || r.label.toLowerCase().includes(q) || r.key.includes(q);
+    if (match) shown++;
+    const buyHit = r.buy > 0, sellHit = r.sell > 0;
+    const cls = buyHit && r.buy >= r.sell ? "hit-buy" : sellHit ? "hit-sell" : "";
+    const pts = buyHit || sellHit
+      ? `${buyHit ? "매수 +" + r.buy : ""}${buyHit && sellHit ? " · " : ""}${sellHit ? "매도 +" + r.sell : ""}`
+      : `0 / ${r.max_pts}`;
+    return `<div class="reason-row ${cls} ${match ? "" : "dim"}" data-target="${r.target || ""}">
+      <span class="rr-label">${r.label}</span>
+      <span class="rr-pts">${pts}</span>
+      ${r.detail ? `<span class="rr-detail">${r.detail}</span>` : ""}
+    </div>`;
+  }).join("");
+
+  if (q && !shown) box.innerHTML = `<p class="empty-msg">"${q}"에 해당하는 근거가 없습니다</p>`;
+
+  // 원점수가 어떻게 최종 점수가 됐는지 그대로 적는다 — 감쇠를 숨기면
+  // "근거는 12점인데 점수는 7점"이 설명되지 않는다
+  if (g) {
+    $("reasonGate").textContent = g.sideways
+      ? `횡보 구간(EMA 9·21 간격이 좁음)이라 점수를 0으로 둡니다. 원점수는 매수 ${g.buy_raw} · 매도 ${g.sell_raw}였습니다.`
+      : g.multiplier === 1
+        ? `ADX ${g.adx.toFixed(1)} ≥ ${g.adx_thr} (추세 구간) — 원점수를 그대로 씁니다. 근거 만점 합계는 30점입니다.`
+        : `ADX ${g.adx.toFixed(1)} < ${g.adx_thr} (추세 약함) — 원점수 매수 ${g.buy_raw} · 매도 ${g.sell_raw}에 0.6을 곱했습니다.`;
+  }
+}
+
+$("reasonToggle").addEventListener("click", () => {
+  const body = $("reasonBody");
+  const open = body.classList.toggle("hidden");
+  $("reasonToggle").textContent = open ? "펼치기" : "접기";
+  $("reasonToggle").setAttribute("aria-expanded", String(!open));
+});
+$("reasonSearch").addEventListener("input", () => { if (state.data) renderReasons(state.data.dashboard); });
 
 function renderTiles(dash, s, last) {
   const rsi = dash.rsi;
